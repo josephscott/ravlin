@@ -18,3 +18,17 @@ autoload: ## Refresh the Composer classmap (picks up new classes)
 	@echo "--> Autoload: composer dump-autoload"
 	composer dump-autoload
 	@echo
+
+.PHONY: style
+style: ## Fix any style issues
+	@echo
+	@echo "--> Style: php-cs-fixer"
+	vendor/bin/php-cs-fixer fix -v
+	@echo
+
+.PHONY: lint
+lint: ## Check if the code is valid
+	@echo
+	@echo "--> Lint"
+	find src tests -name "*.php" -exec php -l {} \;
+	@echo
