@@ -6,6 +6,11 @@
 	"require": {
 		"php": ">=8.4"
 	},
+	"require-dev": {
+		"josephscott/phpcsfixer-config": "0.0.7",
+		"pestphp/pest": "5.3.1",
+		"phpstan/phpstan": "2.3.1"
+	},
 	"autoload": {
 		"classmap": [ "src/" ]
 	},
