@@ -1,0 +1,9 @@
+{
+	"name": "josephscott/ravlin",
+	"description": "A small, secure-by-default PHP framework",
+	"type": "library",
+	"license": "MIT",
+	"require": {
+		"php": ">=8.4"
+	}
+}
