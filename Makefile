@@ -32,3 +32,18 @@ lint: ## Check if the code is valid
 	@echo "--> Lint"
 	find src tests -name "*.php" -exec php -l {} \;
 	@echo
+
+.PHONY: analyze
+analyze: ## Static analysis
+	@echo
+	@echo "--> PHPStan"
+	vendor/bin/phpstan analyze --memory-limit=512M
+	@echo
+
+.PHONY: tests
+tests: ## Run tests
+	@echo
+	@echo "--> Tests: Pest"
+	@echo
+	./vendor/bin/pest
+	@echo
