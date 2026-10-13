@@ -23,13 +23,13 @@ test( 'set_header replaces an existing value regardless of case', function() {
 	expect( ( new Response() )->set_header( 'X-A', '1' )->set_header( 'x-a', '2' )->headers )->toBe( [ 'x-a' => [ '2' ] ] );
 } );
 
-test( 'set_header skips invalid headers with a warning', function( string $name, string $value ) {
+test( 'set_header and add_header skip invalid headers with a warning', function( string $method, string $name, string $value ) {
 	$warnings = [];
 	set_error_handler( function( int $no, string $msg ) use ( &$warnings ) { $warnings[] = $msg; return true; } );
-	$r = ( new Response() )->set_header( $name, $value );
+	$r = ( new Response() )->$method( $name, $value );
 	restore_error_handler();
 	expect( $r->headers )->toBe( [] )->and( $warnings )->toHaveCount( 1 );
-} )->with( [ [ "X-A\n", 'v' ], [ 'Bad Name', 'v' ], [ '', 'v' ], [ 'X-A', "a\r\nb" ], [ 'X-A', "a\nb" ], [ 'X-A', "a\0b" ] ] );
+} )->with( [ 'set_header', 'add_header' ] )->with( [ [ "X-A\n", 'v' ], [ 'Bad Name', 'v' ], [ '', 'v' ], [ 'X-A', "a\r\nb" ], [ 'X-A', "a\nb" ], [ 'X-A', "a\0b" ] ] );
 
 test( 'add_header appends values under the lowercased name', function() {
 	$r = ( new Response() )->set_header( 'Set-Cookie', 'a=1' )->add_header( 'set-cookie', 'b=2' );
