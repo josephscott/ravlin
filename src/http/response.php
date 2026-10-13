@@ -12,7 +12,21 @@ final class Response {
 	) {}
 
 	public function set_header( string $name, string $value ) : self {
-		$this->headers[strtolower( $name )] = [ $value ];
+		if ( $this->valid_header( $name, $value ) ) {
+			$this->headers[strtolower( $name )] = [ $value ];
+		}
 		return $this;
+	}
+
+	private function valid_header( string $name, string $value ) : bool {
+		if ( ! preg_match( '/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/D', $name ) ) {
+			trigger_error( 'Invalid header name', E_USER_WARNING );
+			return false;
+		}
+		if ( strpbrk( $value, "\r\n\0" ) !== false ) {
+			trigger_error( 'Invalid header value for ' . $name, E_USER_WARNING );
+			return false;
+		}
+		return true;
 	}
 }
