@@ -69,3 +69,16 @@ test( 'redirect defaults to 303 with a Location header', function() {
 	$r = Response::redirect( '/login' );
 	expect( [ $r->status, $r->get_header( 'location' ), $r->body ] )->toBe( [ 303, '/login', '' ] );
 } );
+
+test( 'json encodes data with an application/json content type', function() {
+	$r = Response::json( [ 'url' => 'https://x.test/a', 'n' => 1 ], 201 );
+	expect( [ $r->status, $r->body, $r->get_header( 'content-type' ) ] )->toBe( [ 201, '{"url":"https://x.test/a","n":1}', 'application/json' ] );
+} );
+
+test( 'json returns an empty 500 with a warning when encoding fails', function( mixed $data ) {
+	$warnings = [];
+	set_error_handler( function( int $no, string $msg ) use ( &$warnings ) { $warnings[] = $msg; return true; } );
+	$r = Response::json( $data );
+	restore_error_handler();
+	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, '', [] ] )->and( $warnings )->toHaveCount( 1 );
+} )->with( [ "\xB1\x31", NAN ] );

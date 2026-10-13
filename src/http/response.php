@@ -19,6 +19,15 @@ final class Response {
 		return ( new self( $body, $status ) )->set_header( 'Content-Type', 'text/html; charset=utf-8' );
 	}
 
+	public static function json( mixed $data, int $status = 200 ) : self {
+		$body = json_encode( $data, JSON_UNESCAPED_SLASHES );
+		if ( $body === false ) {
+			trigger_error( 'JSON encode failed: ' . json_last_error_msg(), E_USER_WARNING );
+			return new self( '', 500 );
+		}
+		return ( new self( $body, $status ) )->set_header( 'Content-Type', 'application/json' );
+	}
+
 	public static function redirect( string $url, int $status = 303 ) : self {
 		return ( new self( '', $status ) )->set_header( 'Location', $url );
 	}
