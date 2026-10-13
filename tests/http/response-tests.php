@@ -81,4 +81,4 @@ test( 'json returns an empty 500 with a warning when encoding fails', function( 
 	$r = Response::json( $data );
 	restore_error_handler();
 	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, '', [] ] )->and( $warnings )->toHaveCount( 1 );
-} )->with( [ "\xB1\x31", NAN ] );
+} )->with( [ 'invalid utf-8' => "\xB1\x31", 'NAN' => NAN ] );
