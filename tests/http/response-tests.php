@@ -59,3 +59,13 @@ test( 'invalid status codes are skipped with a warning', function( int $status )
 	restore_error_handler();
 	expect( [ $a->status, $b->status ] )->toBe( [ 200, 200 ] )->and( $warnings )->toHaveCount( 2 );
 } )->with( [ -1, 0, 99, 600 ] );
+
+test( 'html sets the body, status and an HTML content type', function() {
+	$r = Response::html( '<p>hi</p>', 201 );
+	expect( [ $r->body, $r->status, $r->get_header( 'content-type' ) ] )->toBe( [ '<p>hi</p>', 201, 'text/html; charset=utf-8' ] );
+} );
+
+test( 'redirect defaults to 303 with a Location header', function() {
+	$r = Response::redirect( '/login' );
+	expect( [ $r->status, $r->get_header( 'location' ), $r->body ] )->toBe( [ 303, '/login', '' ] );
+} );

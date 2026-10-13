@@ -15,6 +15,14 @@ final class Response {
 		$this->set_status( $status );
 	}
 
+	public static function html( string $body, int $status = 200 ) : self {
+		return ( new self( $body, $status ) )->set_header( 'Content-Type', 'text/html; charset=utf-8' );
+	}
+
+	public static function redirect( string $url, int $status = 303 ) : self {
+		return ( new self( '', $status ) )->set_header( 'Location', $url );
+	}
+
 	public function set_status( int $status ) : self {
 		if ( $status < 100 || $status > 599 ) {
 			trigger_error( 'Invalid status code', E_USER_WARNING );
