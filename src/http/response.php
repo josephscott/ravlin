@@ -18,6 +18,13 @@ final class Response {
 		return $this;
 	}
 
+	public function add_header( string $name, string $value ) : self {
+		if ( $this->valid_header( $name, $value ) ) {
+			$this->headers[strtolower( $name )][] = $value;
+		}
+		return $this;
+	}
+
 	private function valid_header( string $name, string $value ) : bool {
 		if ( ! preg_match( '/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/D', $name ) ) {
 			trigger_error( 'Invalid header name', E_USER_WARNING );
