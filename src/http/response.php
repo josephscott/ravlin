@@ -25,6 +25,15 @@ final class Response {
 		return $this;
 	}
 
+	public function remove_header( string $name ) : self {
+		unset( $this->headers[strtolower( $name )] );
+		return $this;
+	}
+
+	public function get_header( string $name ) : ?string {
+		return $this->headers[strtolower( $name )][0] ?? null;
+	}
+
 	private function valid_header( string $name, string $value ) : bool {
 		if ( ! preg_match( '/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/D', $name ) ) {
 			trigger_error( 'Invalid header name', E_USER_WARNING );
