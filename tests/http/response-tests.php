@@ -44,3 +44,18 @@ test( 'get_header returns the first value or null, case-insensitive', function()
 test( 'remove_header deletes all values, case-insensitive', function() {
 	expect( ( new Response() )->add_header( 'X-A', '1' )->add_header( 'X-A', '2' )->remove_header( 'x-a' )->headers )->toBe( [] );
 } );
+
+test( 'set_status and set_body update the response and chain', function() {
+	$r = new Response();
+	expect( $r->set_status( 404 )->set_body( 'nope' ) )->toBe( $r )
+		->and( $r->status )->toBe( 404 )->and( $r->body )->toBe( 'nope' );
+} );
+
+test( 'invalid status codes are skipped with a warning', function( int $status ) {
+	$warnings = [];
+	set_error_handler( function( int $no, string $msg ) use ( &$warnings ) { $warnings[] = $msg; return true; } );
+	$a = new Response( '', $status );
+	$b = ( new Response() )->set_status( $status );
+	restore_error_handler();
+	expect( [ $a->status, $b->status ] )->toBe( [ 200, 200 ] )->and( $warnings )->toHaveCount( 2 );
+} )->with( [ -1, 0, 99, 600 ] );

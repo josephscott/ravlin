@@ -6,10 +6,28 @@ namespace Ravlin\Http;
 final class Response {
 	public private(set) array $headers = [];
 
+	public private(set) int $status = 200;
+
 	public function __construct(
 		public private(set) string $body = '',
-		public private(set) int $status = 200,
-	) {}
+		int $status = 200,
+	) {
+		$this->set_status( $status );
+	}
+
+	public function set_status( int $status ) : self {
+		if ( $status < 100 || $status > 599 ) {
+			trigger_error( 'Invalid status code', E_USER_WARNING );
+			return $this;
+		}
+		$this->status = $status;
+		return $this;
+	}
+
+	public function set_body( string $body ) : self {
+		$this->body = $body;
+		return $this;
+	}
 
 	public function set_header( string $name, string $value ) : self {
 		if ( $this->valid_header( $name, $value ) ) {
