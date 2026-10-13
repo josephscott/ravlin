@@ -24,10 +24,7 @@ test( 'set_header replaces an existing value regardless of case', function() {
 } );
 
 test( 'set_header and add_header skip invalid headers with a warning', function( string $method, string $name, string $value ) {
-	$warnings = [];
-	set_error_handler( function( int $no, string $msg ) use ( &$warnings ) { $warnings[] = $msg; return true; } );
-	$r = ( new Response() )->$method( $name, $value );
-	restore_error_handler();
+	[ $r, $warnings ] = capture_warnings( fn () => ( new Response() )->$method( $name, $value ) );
 	expect( $r->headers )->toBe( [] )->and( $warnings )->toHaveCount( 1 );
 } )->with( [ 'set_header', 'add_header' ] )->with( [ [ "X-A\n", 'v' ], [ 'Bad Name', 'v' ], [ '', 'v' ], [ 'X-A', "a\r\nb" ], [ 'X-A', "a\nb" ], [ 'X-A', "a\0b" ] ] );
 
@@ -52,12 +49,8 @@ test( 'set_status and set_body update the response and chain', function() {
 } );
 
 test( 'invalid status codes are skipped with a warning', function( int $status ) {
-	$warnings = [];
-	set_error_handler( function( int $no, string $msg ) use ( &$warnings ) { $warnings[] = $msg; return true; } );
-	$a = new Response( '', $status );
-	$b = ( new Response() )->set_status( $status );
-	restore_error_handler();
-	expect( [ $a->status, $b->status ] )->toBe( [ 200, 200 ] )->and( $warnings )->toHaveCount( 2 );
+	[ $r, $warnings ] = capture_warnings( fn () => [ new Response( '', $status ), ( new Response() )->set_status( $status ) ] );
+	expect( [ $r[0]->status, $r[1]->status ] )->toBe( [ 200, 200 ] )->and( $warnings )->toHaveCount( 2 );
 } )->with( [ -1, 0, 99, 600 ] );
 
 test( 'html sets the body, status and an HTML content type', function() {
@@ -76,9 +69,6 @@ test( 'json encodes data with an application/json content type', function() {
 } );
 
 test( 'json returns an empty 500 with a warning when encoding fails', function( mixed $data ) {
-	$warnings = [];
-	set_error_handler( function( int $no, string $msg ) use ( &$warnings ) { $warnings[] = $msg; return true; } );
-	$r = Response::json( $data );
-	restore_error_handler();
+	[ $r, $warnings ] = capture_warnings( fn () => Response::json( $data ) );
 	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, '', [] ] )->and( $warnings )->toHaveCount( 1 );
 } )->with( [ 'invalid utf-8' => "\xB1\x31", 'NAN' => NAN ] );
