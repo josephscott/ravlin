@@ -12,4 +12,15 @@ final class Router {
 		$this->routes[] = $route;
 		return $route;
 	}
+
+	public function match( string $method, string $path ) : ?Route {
+		$found = null;
+		foreach ( $this->routes as $route ) {
+			if ( $route->path === $path && in_array( $method, $route->methods, true ) ) {
+				$found = $route;
+				break;
+			}
+		}
+		return $found;
+	}
 }
