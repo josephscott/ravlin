@@ -30,7 +30,7 @@ style: ## Fix any style issues
 lint: ## Check if the code is valid
 	@echo
 	@echo "--> Lint"
-	find src tests -name "*.php" -exec php -l {} \;
+	find src tests examples -name "*.php" -exec php -l {} \;
 	@echo
 
 .PHONY: analyze
@@ -47,3 +47,8 @@ tests: ## Run tests
 	@echo
 	./vendor/bin/pest
 	@echo
+
+##@ Run
+.PHONY: serve
+serve: ## Run the example app with php -S on 127.0.0.1:8000
+	php -S 127.0.0.1:8000 examples/app/public/index.php
