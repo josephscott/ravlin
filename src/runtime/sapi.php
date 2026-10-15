@@ -3,10 +3,17 @@ declare( strict_types = 1 );
 
 namespace Ravlin\Runtime;
 
+use Ravlin\App;
 use Ravlin\Http\Request;
 use Ravlin\Http\Response;
 
 final class Sapi {
+	public static function run( App $app ) : void {
+		$req = self::request();
+		$res = $app->handle( $req );
+		self::send( $res );
+	}
+
 	public static function request() : Request {
 		$headers = [];
 		foreach ( $_SERVER as $key => $value ) {
