@@ -18,18 +18,22 @@ final class Request {
 	}
 
 	public function get_header( string $name ) : ?string {
-		return $this->headers[strtolower( $name )][0] ?? null;
+		$value = $this->headers[strtolower( $name )][0] ?? null;
+		return $value;
 	}
 
 	public function get_query( string $name ) : string|array|null {
-		return $this->query[$name] ?? null;
+		$value = $this->query[$name] ?? null;
+		return $value;
 	}
 
 	public function get_form( string $name ) : string|array|null {
-		return $this->form[$name] ?? null;
+		$value = $this->form[$name] ?? null;
+		return $value;
 	}
 
 	public function get_cookie( string $name ) : string|array|null {
-		return $this->cookies[$name] ?? null;
+		$value = $this->cookies[$name] ?? null;
+		return $value;
 	}
 }

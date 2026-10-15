@@ -12,6 +12,7 @@ final class App {
 	) {}
 
 	public function handle( Request $req ) : Response {
-		return new Response( 'Not Found', 404 );
+		$res = new Response( 'Not Found', 404 );
+		return $res;
 	}
 }
