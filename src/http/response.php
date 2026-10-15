@@ -16,20 +16,24 @@ final class Response {
 	}
 
 	public static function html( string $body, int $status = 200 ) : self {
-		return ( new self( $body, $status ) )->set_header( 'Content-Type', 'text/html; charset=utf-8' );
+		$res = ( new self( $body, $status ) )->set_header( 'Content-Type', 'text/html; charset=utf-8' );
+		return $res;
 	}
 
 	public static function json( mixed $data, int $status = 200 ) : self {
 		$body = json_encode( $data, JSON_UNESCAPED_SLASHES );
 		if ( $body === false ) {
 			trigger_error( 'JSON encode failed: ' . json_last_error_msg(), E_USER_WARNING );
-			return new self( '', 500 );
+			$res = new self( '', 500 );
+			return $res;
 		}
-		return ( new self( $body, $status ) )->set_header( 'Content-Type', 'application/json' );
+		$res = ( new self( $body, $status ) )->set_header( 'Content-Type', 'application/json' );
+		return $res;
 	}
 
 	public static function redirect( string $url, int $status = 303 ) : self {
-		return ( new self( '', $status ) )->set_header( 'Location', $url );
+		$res = ( new self( '', $status ) )->set_header( 'Location', $url );
+		return $res;
 	}
 
 	public function set_status( int $status ) : self {
@@ -66,7 +70,8 @@ final class Response {
 	}
 
 	public function get_header( string $name ) : ?string {
-		return $this->headers[strtolower( $name )][0] ?? null;
+		$value = $this->headers[strtolower( $name )][0] ?? null;
+		return $value;
 	}
 
 	private function valid_header( string $name, string $value ) : bool {
