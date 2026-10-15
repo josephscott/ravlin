@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Ravlin\Runtime;
 
 use Ravlin\Http\Request;
+use Ravlin\Http\Response;
 
 final class Sapi {
 	public static function request() : Request {
@@ -23,5 +24,15 @@ final class Sapi {
 		$body = (string) file_get_contents( 'php://input' );
 		$req = new Request( $method, $path, $_GET, $_POST, $_COOKIE, $headers, $body );
 		return $req;
+	}
+
+	public static function send( Response $res ) : void {
+		http_response_code( $res->status );
+		foreach ( $res->headers as $name => $values ) {
+			foreach ( $values as $value ) {
+				header( $name . ': ' . $value, false );
+			}
+		}
+		echo $res->body;
 	}
 }
