@@ -42,6 +42,11 @@ final class App {
 		return $route;
 	}
 
+	public function delete( string $path, mixed $handler ) : Route {
+		$route = $this->route( [ 'DELETE' ], $path, $handler );
+		return $route;
+	}
+
 	public function handle( Request $req ) : Response {
 		$res = new Response( 'Not Found', 404 );
 		return $res;
