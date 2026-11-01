@@ -22,6 +22,16 @@ final class App {
 		return $route;
 	}
 
+	public function get( string $path, mixed $handler ) : Route {
+		$route = $this->route( [ 'GET' ], $path, $handler );
+		return $route;
+	}
+
+	public function post( string $path, mixed $handler ) : Route {
+		$route = $this->route( [ 'POST' ], $path, $handler );
+		return $route;
+	}
+
 	public function handle( Request $req ) : Response {
 		$res = new Response( 'Not Found', 404 );
 		return $res;
