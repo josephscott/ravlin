@@ -16,3 +16,9 @@ test( 'match finds the first route with the same method and exact path', functio
 	expect( $router->match( 'GET', '/posts' )?->handler )->toBe( 'list' )
 		->and( $router->match( 'POST', '/posts' )?->handler )->toBe( 'store' );
 } );
+
+test( 'match returns null for other methods, a trailing slash, or different case', function( string $method, string $path ) {
+	$router = new Router();
+	$router->add( [ 'GET' ], '/posts', 'list' );
+	expect( $router->match( $method, $path ) )->toBeNull();
+} )->with( [ [ 'DELETE', '/posts' ], [ 'GET', '/posts/' ], [ 'GET', '/Posts' ] ] );
