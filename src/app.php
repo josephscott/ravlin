@@ -48,7 +48,18 @@ final class App {
 	}
 
 	public function handle( Request $req ) : Response {
-		$res = new Response( 'Not Found', 404 );
+		$route = $this->router->match( $req->method, $req->path );
+		if ( $route === null ) {
+			$res = new Response( 'Not Found', 404 );
+			return $res;
+		}
+		$result = ( $route->handler )( $req );
+		$res = $this->to_response( $result );
+		return $res;
+	}
+
+	private function to_response( mixed $result ) : Response {
+		$res = $result instanceof Response ? $result : Response::html( (string) $result );
 		return $res;
 	}
 }
