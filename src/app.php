@@ -32,6 +32,16 @@ final class App {
 		return $route;
 	}
 
+	public function put( string $path, mixed $handler ) : Route {
+		$route = $this->route( [ 'PUT' ], $path, $handler );
+		return $route;
+	}
+
+	public function patch( string $path, mixed $handler ) : Route {
+		$route = $this->route( [ 'PATCH' ], $path, $handler );
+		return $route;
+	}
+
 	public function handle( Request $req ) : Response {
 		$res = new Response( 'Not Found', 404 );
 		return $res;
