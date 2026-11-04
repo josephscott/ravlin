@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Ravlin;
 
+use Ravlin\Handling\Csrf;
 use Ravlin\Handling\ErrorHandler;
 use Ravlin\Handling\ErrorLog;
 use Ravlin\Http\Request;
@@ -21,12 +22,25 @@ final class App {
 
 	private ErrorHandler $errors;
 
+	private Csrf $csrf;
+
+	private bool $debug;
+
 	public function __construct(
 		public private(set) array $config = [],
 	) {
 		$this->router = new Router();
 		$this->log = new ErrorLog();
-		$this->errors = new ErrorHandler( ( $config['debug'] ?? false ) === true, $this->log );
+		$this->debug = ( $config['debug'] ?? false ) === true;
+		$this->errors = new ErrorHandler( $this->debug, $this->log );
+		$csrf = $config['csrf'] ?? true;
+		$valid = is_bool( $csrf ) || ( is_array( $csrf ) && array_diff( array_keys( $csrf ), [ 'trusted_origins' ] ) === []
+			&& ( ! array_key_exists( 'trusted_origins', $csrf ) || is_array( $csrf['trusted_origins'] ) ) );
+		if ( ! $valid ) {
+			trigger_error( 'Invalid csrf config ignored, CSRF protection stays on', E_USER_WARNING );
+			$csrf = true;
+		}
+		$this->csrf = new Csrf( $csrf !== false, is_array( $csrf ) ? ( $csrf['trusted_origins'] ?? [] ) : [] );
 	}
 
 	public function route( array $methods, string $path, mixed $handler ) : Route {
@@ -118,8 +132,14 @@ final class App {
 
 	private function route_request( Request $req ) : Response {
 		$matched = $this->router->match( $req->method, $req->path );
+		$reason = $matched->route === null ? null : $this->csrf->rejection( $req, $matched->route->get_option( 'csrf' ) );
 		if ( $matched->route === null ) {
 			$res = $this->no_route( $req, $matched->allowed );
+		} elseif ( $reason !== null ) {
+			if ( $this->debug ) {
+				$this->log->write( 'CSRF rejected ' . $req->method . ' ' . $req->path . ': ' . $reason );
+			}
+			$res = ( new Response( 'Forbidden', 403 ) )->set_header( 'Content-Type', 'text/plain; charset=utf-8' );
 		} else {
 			$res = $this->dispatch( $matched->route, $req->with_params( $matched->params ) );
 		}

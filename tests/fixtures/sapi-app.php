@@ -24,5 +24,6 @@ $app->get( '/warn', function() {
 	trigger_error( 'SECRET warning', E_USER_WARNING );
 	return 'ok';
 } );
+$app->post( '/post', fn () => 'posted' );
 $app->get( '/throw', fn () => throw new RuntimeException( 'SECRET' ) );
 Ravlin\Runtime\Sapi::run( $app );

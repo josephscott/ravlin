@@ -71,10 +71,20 @@
 - `Sapi`: `exit`/`die` or a fatal before the response is sent → 500, empty body (so `header( 'Location: …' ); exit;` becomes a 500 — return `Response::redirect()`); with `display_errors=1` PHP prints fatals itself (never in production)
 - `Sapi::run()` is once per process (each call registers a shutdown function); callers of `handle()` outside a runtime get PHP's native warning logging
 - Not catchable: fatal errors (memory, timeouts), `exit`/`die`, errors while loading routes at boot; `handle()` is not reentrant across Fibers (output buffers are process-global)
-2. CSRF — unsafe methods rejected with 403 when cross-site (Sec-Fetch-Site, then Origin) or the signed token is bad
+2. CSRF — after route match (needs the route's option), before dispatch; modeled on Go's `net/http` CrossOriginProtection
+- Only unsafe methods (not GET/HEAD/OPTIONS); `Sec-Fetch-Site` `same-origin`/`none` → allowed whatever `Origin` says, any other value → 403 unless `Origin` is trusted
+- No `Sec-Fetch-Site`: no `Origin` either → allowed (not a browser, or a legacy browser); otherwise `Origin` must be `http(s)://` + `Host` (case-insensitive, default ports `:80`/`:443` on either side normalized), or be trusted; `null`, other schemes, paths, queries, userinfo → 403
+- Stricter than Go: more than one `Sec-Fetch-Site` or `Origin` header → 403; an empty `Sec-Fetch-Site` → 403 (Go: treated as absent); an empty `Origin` without `Sec-Fetch-Site` → 403 (Go: allowed); `Origin`/`Host` must be a plain hostname, IP or valid `[ipv6]` (a trailing-dot `Host` → 403); only `http`/`https` origins can match `Host`
+- Looser than Go: `Sec-Fetch-Site` values are compared case-insensitively
+- 403 is plain `Forbidden`, `text/plain`; the handler never runs; 404/405/automatic OPTIONS are unaffected; with `debug` on the reason, including the `Sec-Fetch-Site`/`Origin`/`Host` values compared, is logged (escaped and capped)
+- Config `csrf`: `true` (default; `null` or a missing key means the same), `false`, or `[ 'trusted_origins' => [ 'https://admin.example.com', … ] ]` (exact `scheme://host[:port]`, port 1–65535, default ports normalized, IDN hosts as punycode; invalid entry → warning); any other value or key → warning, stays on
+- Under php-fpm/`php -S`, headers come from `$_SERVER`, where `Sec_Fetch_Site` and `Sec-Fetch-Site` collide and the last one wins, so a client sending both can turn `cross-site` into `same-origin`; a browser can only send such a header cross-origin in CORS mode, whose preflight ravlin's automatic OPTIONS never approves, so only non-browser clients (which need no forgery) can do it; servers that drop underscore headers (nginx default) avoid it entirely
+- Not covered: DNS rebinding (an attacker host resolving to the app, so `Origin` matches `Host`) — an `allowed_hosts` setting is planned
+- Per route `set_option( 'csrf', false|true )` beats the global setting
+- Signed double-submit token: deferred to the cookies milestone (needs keys, `Set-Cookie`, the form helper) — defense in depth on top of the header checks
 3. Route match → `with_params()` → handler; string/array return converted to a Response
 4. Security headers — CSP with per-request nonce, nosniff, frame-ancestors, Referrer-Policy, COOP, CORP, HSTS on HTTPS
-- Security headers are added to every response, including the 500 from step 1 and the 403 from step 2
+- Security headers are added to every response, including the 500 from step 1 and the 403 from step 2 (not built yet)
 - Config switches: `csrf`, `security_headers` (`true`/`false` or an array of overrides)
 - Per route: `->set_option( 'csrf', false )` (e.g. webhooks), `->set_option( 'csp', '...' )`; `get_option( $name )` → null when unset
 - Only known options with the right type (`csrf` bool, `csp` non-empty printable ASCII) are kept; anything else → warning

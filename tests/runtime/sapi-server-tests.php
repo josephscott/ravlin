@@ -23,8 +23,9 @@ function sapi_server_start( string $log ) : array {
 	return $server ?? [ null, 0 ];
 }
 
-function sapi_server_get( int $port, string $path ) : array {
-	$body = (string) @file_get_contents( 'http://127.0.0.1:' . $port . $path, false, stream_context_create( [ 'http' => [ 'ignore_errors' => true, 'timeout' => 5 ] ] ) );
+function sapi_server_get( int $port, string $path, string $method = 'GET', array $headers = [] ) : array {
+	$http = [ 'method' => $method, 'header' => $headers, 'ignore_errors' => true, 'timeout' => 5 ];
+	$body = (string) @file_get_contents( 'http://127.0.0.1:' . $port . $path, false, stream_context_create( [ 'http' => $http ] ) );
 	$status = (int) explode( ' ', http_get_last_response_headers()[0] ?? 'HTTP/1.1 0' )[1];
 	return [ $status, $body ];
 }
@@ -55,4 +56,31 @@ test( 'under php -S, exit, fatals, warnings and throwables never leak handler ou
 	] )->and( $display[1] )->toContain( 'Allowed memory size' )->not->toContain( 'SECRET' )
 		->and( $logged )->toContain( 'ravlin: PHP Warning: SECRET warning' )
 		->and( $logged )->toContain( 'ravlin: uncaught RuntimeException: SECRET' );
+} );
+
+test( 'under php -S, CSRF protection sees the browser headers', function() {
+	if ( ! function_exists( 'proc_open' ) ) {
+		$this->markTestSkipped( 'proc_open is disabled' );
+	}
+	$log = (string) tempnam( sys_get_temp_dir(), 'ravlin-server-log' );
+	[ $proc, $port ] = sapi_server_start( $log );
+	expect( $proc )->not->toBeNull();
+	$own = 'http://127.0.0.1:' . $port;
+	$results = [
+		'no browser headers' => sapi_server_get( $port, '/post', 'POST' ),
+		'same-origin' => sapi_server_get( $port, '/post', 'POST', [ 'Sec-Fetch-Site: same-origin', 'Origin: https://evil.test' ] ),
+		'cross-site' => sapi_server_get( $port, '/post', 'POST', [ 'Sec-Fetch-Site: cross-site', 'Origin: ' . $own ] ),
+		'own Origin' => sapi_server_get( $port, '/post', 'POST', [ 'Origin: ' . $own ] ),
+		'foreign Origin' => sapi_server_get( $port, '/post', 'POST', [ 'Origin: https://evil.test' ] ),
+	];
+	proc_terminate( $proc );
+	proc_close( $proc );
+	unlink( $log );
+	expect( $results )->toBe( [
+		'no browser headers' => [ 200, 'posted' ],
+		'same-origin' => [ 200, 'posted' ],
+		'cross-site' => [ 403, 'Forbidden' ],
+		'own Origin' => [ 200, 'posted' ],
+		'foreign Origin' => [ 403, 'Forbidden' ],
+	] );
 } );
