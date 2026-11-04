@@ -68,7 +68,13 @@ test( 'json encodes data with an application/json content type', function() {
 	expect( [ $r->status, $r->body, $r->get_header( 'content-type' ) ] )->toBe( [ 201, '{"url":"https://x.test/a","n":1}', 'application/json' ] );
 } );
 
-test( 'json returns an empty 500 with a warning when encoding fails', function( mixed $data ) {
+test( 'server_error is a plain, uncached 500', function() {
+	$r = Response::server_error();
+	expect( [ $r->status, $r->body, $r->headers ] )
+		->toBe( [ 500, 'Internal Server Error', [ 'content-type' => [ 'text/plain; charset=utf-8' ], 'cache-control' => [ 'no-store' ] ] ] );
+} );
+
+test( 'json returns server_error with a warning when encoding fails', function( mixed $data ) {
 	[ $r, $warnings ] = capture_warnings( fn () => Response::json( $data ) );
-	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, '', [] ] )->and( $warnings )->toHaveCount( 1 );
+	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, 'Internal Server Error', Response::server_error()->headers ] )->and( $warnings )->toHaveCount( 1 );
 } )->with( [ 'invalid utf-8' => "\xB1\x31", 'NAN' => NAN ] );

@@ -126,18 +126,18 @@ test( 'handle passes the request to the handler', function() {
 	expect( $r->body )->toBe( 'ravlin' );
 } );
 
-test( 'handle returns an empty 500 with a warning for unsupported handler results', function( mixed $result ) {
+test( 'handle returns the plain 500 with a warning for unsupported handler results', function( mixed $result ) {
 	$app = new App();
 	$app->get( '/x', fn () => $result );
 	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
-	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, '', [] ] )->and( $warnings )->toHaveCount( 1 );
+	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, 'Internal Server Error', [ 'content-type' => [ 'text/plain; charset=utf-8' ], 'cache-control' => [ 'no-store' ] ] ] )->and( $warnings )->toHaveCount( 1 );
 } )->with( [ 'null' => null, 'int' => 42, 'object' => new stdClass() ] );
 
-test( 'handle returns an empty 500 with a warning when the handler is not callable', function( mixed $handler ) {
+test( 'handle returns the plain 500 with a warning when the handler is not callable', function( mixed $handler ) {
 	$app = new App();
 	$app->get( '/x', $handler );
 	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
-	expect( [ $r->status, $r->body ] )->toBe( [ 500, '' ] )->and( $warnings )->toBe( [ 'Route handler is not callable: /x' ] );
+	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, 'Internal Server Error', [ 'content-type' => [ 'text/plain; charset=utf-8' ], 'cache-control' => [ 'no-store' ] ] ] )->and( $warnings )->toBe( [ 'Route handler is not callable: /x' ] );
 } )->with( [
 	'missing function' => 'no_such_function',
 	'missing class method' => [ [ AppTestsMethods::class, 'nope' ] ],
@@ -156,11 +156,11 @@ test( 'handle returns a copy of a Response the handler returns', function() {
 	expect( $second )->not->toBe( $shared )->not->toBe( $first )->and( $second->headers )->toBe( [] )->and( $second->body )->toBe( 'cached' );
 } );
 
-test( 'handle returns an empty 500 when an array result cannot be JSON encoded', function() {
+test( 'handle returns the plain 500 when an array result cannot be JSON encoded', function() {
 	$app = new App();
 	$app->get( '/x', fn () => [ 'bad' => "\xB1\x31" ] );
 	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
-	expect( [ $r->status, $r->body ] )->toBe( [ 500, '' ] )->and( $warnings )->toHaveCount( 1 )
+	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, 'Internal Server Error', [ 'content-type' => [ 'text/plain; charset=utf-8' ], 'cache-control' => [ 'no-store' ] ] ] )->and( $warnings )->toHaveCount( 1 )
 		->and( $warnings[0] )->toStartWith( 'JSON encode failed' );
 } );
 

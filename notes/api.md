@@ -8,6 +8,7 @@
 - `get_header( string $name ) : ?string` — case-insensitive, first value; `$headers` readable, `private(set)`
 - `Response::html( string $body, int $status = 200 )`, `Response::json( mixed $data, int $status = 200 )`
 - `Response::redirect( string $url, int $status = 303 )` — 303 so POST → GET is always correct
+- `Response::server_error()` — the one plain 500: `Internal Server Error`, `text/plain; charset=utf-8`, `Cache-Control: no-store`; also what `json()` returns when encoding fails; it doesn't log
 
 ## Request — read-only for users (`private(set)`), built by the runtime adapter
 - `$method` (uppercase), `$path` (raw, no query string; the router decodes each segment), `$body` (raw), `$headers` — same shape as Response
@@ -60,6 +61,16 @@
 
 ## Built-in request handling (fixed order inside `App::handle()`, no public middleware API yet)
 1. Error handler — the one outermost `catch ( \Throwable )`: plain 500 in prod, detail page when `debug` is true
+- Prod 500: `Internal Server Error`, `text/plain; charset=utf-8`; debug (`=== true` only): escaped HTML with class, message, file:line, trace, previous chain; both `Cache-Control: no-store`
+- Every uncaught Throwable is logged as one `error_log` line (control bytes and `\` escaped, trace without argument values, ≤ 10 previous, ≤ 50 frames, messages ≤ 8 KB, line ≤ 16 KB)
+- All framework 500s (throwable, non-callable handler, unsupported result, JSON failure) share the plain shape above
+- `handle()` captures handler output with a discarding buffer, unwinds buffers inside the catch, and logs the stray byte count
+- A handler that closes ravlin's buffer (e.g. `ob_end_flush()`) → 500 + log, its output may already have escaped; one that opens a buffer that can't be removed → buffer emptied, 500 + log, later output passes through instead of vanishing
+- Warnings → log is a runtime policy, not `handle()`'s: runtimes install `ErrorLog` (only if no handler is set; an app's Sentry/test handler is left alone), and remove it only if it's still on top
+- The handler returns false for unreported/`@` errors (so `error_get_last()` works) and for `E_USER_ERROR`/`E_RECOVERABLE_ERROR` (PHP still halts); reported warnings never set `error_get_last()`
+- `Sapi`: `exit`/`die` or a fatal before the response is sent → 500, empty body (so `header( 'Location: …' ); exit;` becomes a 500 — return `Response::redirect()`); with `display_errors=1` PHP prints fatals itself (never in production)
+- `Sapi::run()` is once per process (each call registers a shutdown function); callers of `handle()` outside a runtime get PHP's native warning logging
+- Not catchable: fatal errors (memory, timeouts), `exit`/`die`, errors while loading routes at boot; `handle()` is not reentrant across Fibers (output buffers are process-global)
 2. CSRF — unsafe methods rejected with 403 when cross-site (Sec-Fetch-Site, then Origin) or the signed token is bad
 3. Route match → `with_params()` → handler; string/array return converted to a Response
 4. Security headers — CSP with per-request nonce, nosniff, frame-ancestors, Referrer-Policy, COOP, CORP, HSTS on HTTPS
@@ -74,3 +85,4 @@
 - `Workerman::run( App $app, string $listen = 'http://0.0.0.0:8080', int $workers = 4 ) : void`
 - Static files: out of scope for now — ravlin doesn't serve them (FrankenPHP's Caddy still does on its own)
 - All runtimes only translate: Request in → `$app->handle()` → Response out
+- Runtimes install `ErrorLog` (once per process for workers); Workerman installs its own handler (stdout → /dev/null in daemon mode), so its adapter must replace it and require an `error_log` file

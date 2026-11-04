@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Ravlin;
 
+use Ravlin\Handling\ErrorHandler;
+use Ravlin\Handling\ErrorLog;
 use Ravlin\Http\Request;
 use Ravlin\Http\Response;
 use Ravlin\Routing\Group;
@@ -15,10 +17,16 @@ final class App {
 
 	private Router $router;
 
+	private ErrorLog $log;
+
+	private ErrorHandler $errors;
+
 	public function __construct(
 		public private(set) array $config = [],
 	) {
 		$this->router = new Router();
+		$this->log = new ErrorLog();
+		$this->errors = new ErrorHandler( ( $config['debug'] ?? false ) === true, $this->log );
 	}
 
 	public function route( array $methods, string $path, mixed $handler ) : Route {
@@ -55,14 +63,65 @@ final class App {
 	}
 
 	public function handle( Request $req ) : Response {
+		$level = ob_get_level();
+		$capture = new \ArrayObject( [ 'active' => true, 'ended' => false ] );
+		ob_start( static function( string $buffer, int $phase ) use ( $capture ) : string {
+			if ( $capture['active'] && ( $phase & PHP_OUTPUT_HANDLER_FINAL ) ) {
+				$capture['ended'] = true;
+			}
+			$out = $capture['active'] ? '' : $buffer;
+			return $out;
+		} );
+		try {
+			$res = $this->route_request( $req );
+			$clean = $this->discard_output( $level, $capture );
+		} catch ( \Throwable $e ) {
+			$res = $this->errors->response( $e );
+			$clean = $this->discard_output( $level, $capture );
+		}
+		if ( ! $clean ) {
+			$res = Response::server_error();
+		}
+		if ( $req->method === 'HEAD' ) {
+			$res->set_body( '' );
+		}
+		return $res;
+	}
+
+	private function discard_output( int $level, \ArrayObject $capture ) : bool {
+		$closed = $capture['ended'] === true;
+		$capture['active'] = false;
+		$stray = 0;
+		$stuck = false;
+		while ( ! $stuck && ob_get_level() > $level ) {
+			$before = ob_get_level();
+			$stray += strlen( (string) ob_get_clean() );
+			$stuck = ob_get_level() === $before;
+			if ( $stuck ) {
+				$stray += strlen( (string) ob_get_contents() );
+				ob_clean();
+			}
+		}
+		$closed = $closed || ob_get_level() < $level;
+		if ( $stuck ) {
+			$this->log->write( 'could not remove an output buffer a handler opened; later output is no longer discarded' );
+		}
+		if ( $closed ) {
+			$this->log->write( 'a handler closed output buffers it did not open; its later output may have been sent' );
+		}
+		if ( $stray > 0 ) {
+			$this->log->write( 'discarded ' . $stray . ' bytes of output produced while handling a request' );
+		}
+		$clean = ! $stuck && ! $closed;
+		return $clean;
+	}
+
+	private function route_request( Request $req ) : Response {
 		$matched = $this->router->match( $req->method, $req->path );
 		if ( $matched->route === null ) {
 			$res = $this->no_route( $req, $matched->allowed );
 		} else {
 			$res = $this->dispatch( $matched->route, $req->with_params( $matched->params ) );
-		}
-		if ( $req->method === 'HEAD' ) {
-			$res->set_body( '' );
 		}
 		return $res;
 	}
@@ -90,7 +149,7 @@ final class App {
 			$res = $this->to_response( $handler( $req ) );
 		} else {
 			trigger_error( 'Route handler is not callable: ' . $route->path, E_USER_WARNING );
-			$res = new Response( '', 500 );
+			$res = Response::server_error();
 		}
 		return $res;
 	}
@@ -104,7 +163,7 @@ final class App {
 			$res = Response::json( $result );
 		} else {
 			trigger_error( 'Handler returned an unsupported type: ' . get_debug_type( $result ), E_USER_WARNING );
-			$res = new Response( '', 500 );
+			$res = Response::server_error();
 		}
 		return $res;
 	}

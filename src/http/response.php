@@ -26,10 +26,17 @@ final class Response {
 		$body = json_encode( $data, JSON_UNESCAPED_SLASHES );
 		if ( $body === false ) {
 			trigger_error( 'JSON encode failed: ' . json_last_error_msg(), E_USER_WARNING );
-			$res = new self( '', 500 );
+			$res = self::server_error();
 			return $res;
 		}
 		$res = ( new self( $body, $status ) )->set_header( 'Content-Type', 'application/json' );
+		return $res;
+	}
+
+	public static function server_error() : self {
+		$res = ( new self( 'Internal Server Error', 500 ) )
+			->set_header( 'Content-Type', 'text/plain; charset=utf-8' )
+			->set_header( 'Cache-Control', 'no-store' );
 		return $res;
 	}
 

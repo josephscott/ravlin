@@ -15,3 +15,20 @@ function capture_warnings( callable $fn ) : array {
 	error_reporting( $level );
 	return [ $result, $warnings ];
 }
+
+function capture_log( callable $fn ) : array {
+	$file = (string) tempnam( sys_get_temp_dir(), 'ravlin-log' );
+	$old = ini_set( 'error_log', $file );
+	$result = $fn();
+	ini_set( 'error_log', (string) $old );
+	$log = (string) file_get_contents( $file );
+	unlink( $file );
+	return [ $result, $log ];
+}
+
+function without_error_handler( callable $fn ) : mixed {
+	set_error_handler( null );
+	$result = $fn();
+	restore_error_handler();
+	return $result;
+}
