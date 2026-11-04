@@ -29,9 +29,14 @@
 - `get|post|put|patch|delete( string $path, $handler ) : Route`; `route( array $methods, $path, $handler ) : Route`
 - Handler: `fn ( Request $req ) : Response|string|array` — string → `Response::html()`, array → `Response::json()`
 - Handler forms (`callable|array|string`): closure, `[ Class::class, 'method' ]`, `Class::class`, `[ $object, 'method' ]`
-- `Class::class` alone: calls `__invoke()` if present, else the method named after the HTTP method (`get()`, `post()`; HEAD → `get()`; missing → 405)
+- `Class::class` alone: calls `__invoke()` if present, else the method named after the HTTP method (`get()`, `post()`; HEAD → `head()`, then `get()`)
+- A class route only serves the methods its class implements (names starting with `__` never count) — others fall through to later routes, then 405/OPTIONS `Allow` lists only what's served
+- Only the route's listed methods are checked: a `get()` route on a class with just `head()` serves nothing (404); a private `get()` still matches → 500 + warning
+- Inherited public methods count: don't put public `get()`/`delete()` helpers on a base class you route to
+- Anything already callable is used as-is: a function name beats a class of the same name; `[ Class::class, 'static' ]` is called without constructing
 - `::class` forms: `new Class( $app )` per request, only for the matched route — no state carried between requests
 - `[ $object, 'method' ]`: one object reused across requests in worker runtimes — keep it stateless
+- In worker runtimes, static properties on handler classes persist across requests; handlers must not register routes on `$app`
 - Paths: `/posts/{id}`, `/posts/{id:int}`, `/tags/{slug:[a-z-]+}` — read with `$req->get_param( 'id' )`, always a string
 - Constraints: `int` = `[0-9]+`; anything else is a regex for the whole decoded segment (no `/` or `#`); bad regex → route skipped with a warning
 - A failed constraint means the route doesn't match: later routes are tried, then 404 (not 405)

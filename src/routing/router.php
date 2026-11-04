@@ -50,7 +50,7 @@ final class Router {
 			if ( $params === null ) {
 				continue;
 			}
-			$methods = $entry['route']->methods;
+			$methods = $entry['route']->served_methods();
 			if ( in_array( $method, $methods, true ) ) {
 				$found = new Matched( $entry['route'], $params );
 				break;

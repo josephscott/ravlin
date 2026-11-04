@@ -73,13 +73,18 @@ final class App {
 
 	private function dispatch( Route $route, Request $req ) : Response {
 		$handler = $route->handler;
-		if ( ! is_callable( $handler ) ) {
+		$name = $route->class_method( $req->method );
+		if ( $name !== null ) {
+			$handler = [ new $handler( $this ), $name ];
+		} elseif ( is_array( $handler ) && ! is_callable( $handler ) && array_is_list( $handler ) && count( $handler ) === 2 && is_string( $handler[0] ) && class_exists( $handler[0] ) ) {
+			$handler = [ new $handler[0]( $this ), $handler[1] ];
+		}
+		if ( is_callable( $handler ) ) {
+			$res = $this->to_response( $handler( $req ) );
+		} else {
 			trigger_error( 'Route handler is not callable: ' . $route->path, E_USER_WARNING );
 			$res = new Response( '', 500 );
-			return $res;
 		}
-		$result = $handler( $req );
-		$res = $this->to_response( $result );
 		return $res;
 	}
 

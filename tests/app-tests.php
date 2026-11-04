@@ -5,6 +5,97 @@ use Ravlin\App;
 use Ravlin\Http\Request;
 use Ravlin\Http\Response;
 
+final class AppTestsInvokable {
+	public function __construct( private App $app ) {}
+
+	public function __invoke( Request $req ) {
+		return $this->app->config['name'] . ':' . $req->method;
+	}
+}
+
+final class AppTestsMethods {
+	public static bool $constructed = false;
+
+	private int $calls = 0;
+
+	public function __construct() {
+		self::$constructed = true;
+	}
+
+	public function get( Request $req ) {
+		return 'get';
+	}
+
+	public function post( Request $req ) {
+		return 'post';
+	}
+
+	public function show( Request $req ) {
+		$this->calls++;
+		return 'show ' . $this->calls;
+	}
+
+	private function hidden() {
+		return 'hidden';
+	}
+}
+
+final class AppTestsStatic {
+	public function __construct( string $dsn ) {}
+
+	public static function show( Request $req ) {
+		return 'static';
+	}
+}
+
+class AppTestsBase {
+	public function delete( Request $req ) {
+		return 'base-delete';
+	}
+}
+
+final class AppTestsChild extends AppTestsBase {
+	public function get( Request $req ) {
+		return 'child-get';
+	}
+
+	public function options( Request $req ) {
+		return new Response( 'custom options' );
+	}
+}
+
+final class AppTestsPrivateGet {
+	private function get() {
+		return 'private';
+	}
+}
+
+final class AppTestsMagic {
+	public function __call( string $name, array $args ) {
+		return 'magic';
+	}
+}
+
+final class AppTestsHead {
+	public function head( Request $req ) {
+		return ( new Response() )->set_header( 'X-From', 'head' );
+	}
+
+	public function get( Request $req ) {
+		return ( new Response() )->set_header( 'X-From', 'get' );
+	}
+}
+
+function app_tests_function( Request $req ) {
+	return 'function';
+}
+
+final class App_Tests_Function {
+	public function get( Request $req ) {
+		return 'class';
+	}
+}
+
 test( 'config is readable', fn () => expect( ( new App( [ 'debug' => true ] ) )->config )->toBe( [ 'debug' => true ] ) );
 
 test( 'handle returns a 404 when nothing matches', function() {
@@ -47,7 +138,13 @@ test( 'handle returns an empty 500 with a warning when the handler is not callab
 	$app->get( '/x', $handler );
 	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
 	expect( [ $r->status, $r->body ] )->toBe( [ 500, '' ] )->and( $warnings )->toBe( [ 'Route handler is not callable: /x' ] );
-} )->with( [ 'missing function' => 'no_such_function', 'class name' => stdClass::class, 'non-static method' => [ Response::class, 'set_body' ] ] );
+} )->with( [
+	'missing function' => 'no_such_function',
+	'missing class method' => [ [ AppTestsMethods::class, 'nope' ] ],
+	'private class method' => [ [ AppTestsMethods::class, 'hidden' ] ],
+	'array with extra items' => [ [ AppTestsMethods::class, 'show', 'x' ] ],
+	'static-style array of an unknown class' => [ [ 'NoSuchClass', 'show' ] ],
+] );
 
 test( 'handle returns a copy of a Response the handler returns', function() {
 	$shared = new Response( 'cached' );
@@ -180,4 +277,98 @@ test( 'a param with invalid UTF-8 is a 404, not a 500', function() {
 	$app = new App();
 	$app->get( '/hello/{name}', fn ( Request $req ) => [ 'name' => $req->get_param( 'name' ) ] );
 	expect( $app->handle( new Request( 'GET', '/hello/%FF' ) )->status )->toBe( 404 );
+} );
+
+test( 'a class name handler calls __invoke on a new instance that gets the App', function() {
+	$app = new App( [ 'name' => 'demo' ] );
+	$app->route( [ 'GET', 'POST' ], '/x', AppTestsInvokable::class );
+	expect( $app->handle( new Request( 'POST', '/x' ) )->body )->toBe( 'demo:POST' );
+} );
+
+test( 'a class name handler without __invoke calls the method named after the HTTP method', function( string $method, string $body ) {
+	$app = new App();
+	$app->route( [ 'GET', 'POST' ], '/x', AppTestsMethods::class );
+	expect( $app->handle( new Request( $method, '/x' ) )->body )->toBe( $body );
+} )->with( [ [ 'GET', 'get' ], [ 'POST', 'post' ], [ 'HEAD', '' ] ] );
+
+test( 'HEAD prefers head() over get() on a class handler', function( string $method, string $from ) {
+	$app = new App();
+	$app->route( [ 'GET', 'HEAD' ], '/x', AppTestsHead::class );
+	expect( $app->handle( new Request( $method, '/x' ) )->get_header( 'x-from' ) )->toBe( $from );
+} )->with( [ [ 'HEAD', 'head' ], [ 'GET', 'get' ] ] );
+
+test( 'a class without a method for the request gets a 405 without being constructed', function() {
+	AppTestsMethods::$constructed = false;
+	$app = new App();
+	$app->route( [ 'GET', 'DELETE', 'MAGIC' ], '/x', AppTestsMethods::class );
+	$r = $app->handle( new Request( 'DELETE', '/x' ) );
+	$options = $app->handle( new Request( 'OPTIONS', '/x' ) );
+	expect( [ $r->status, $r->get_header( 'allow' ), AppTestsMethods::$constructed ] )->toBe( [ 405, 'GET, HEAD, OPTIONS', false ] )
+		->and( [ $options->status, $options->get_header( 'allow' ) ] )->toBe( [ 204, 'GET, HEAD, OPTIONS' ] );
+} );
+
+test( 'a method a class does not implement falls through to a later route on the same path', function() {
+	$app = new App();
+	$app->route( [ 'GET', 'POST' ], '/x', AppTestsChild::class );
+	$app->post( '/x', fn () => 'closure-post' );
+	$app->put( '/x', fn () => 'closure-put' );
+	$r = $app->handle( new Request( 'PATCH', '/x' ) );
+	expect( $app->handle( new Request( 'POST', '/x' ) )->body )->toBe( 'closure-post' )
+		->and( [ $r->status, $r->get_header( 'allow' ) ] )->toBe( [ 405, 'GET, POST, PUT, HEAD, OPTIONS' ] );
+} );
+
+test( 'an OPTIONS route method uses options() when present, else the automatic 204', function() {
+	$app = new App();
+	$app->route( [ 'GET', 'OPTIONS' ], '/child', AppTestsChild::class );
+	$app->route( [ 'GET', 'OPTIONS' ], '/methods', AppTestsMethods::class );
+	$methods = $app->handle( new Request( 'OPTIONS', '/methods' ) );
+	expect( $app->handle( new Request( 'OPTIONS', '/child' ) )->body )->toBe( 'custom options' )
+		->and( [ $methods->status, $methods->get_header( 'allow' ) ] )->toBe( [ 204, 'GET, HEAD, OPTIONS' ] );
+} );
+
+test( 'inherited public methods are served', function() {
+	$app = new App();
+	$app->route( [ 'DELETE' ], '/x', AppTestsChild::class );
+	expect( $app->handle( new Request( 'DELETE', '/x' ) )->body )->toBe( 'base-delete' );
+} );
+
+test( 'a private method named after the HTTP method gets a 500 with a warning', function() {
+	$app = new App();
+	$app->get( '/x', AppTestsPrivateGet::class );
+	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
+	expect( $r->status )->toBe( 500 )->and( $warnings )->toBe( [ 'Route handler is not callable: /x' ] );
+} );
+
+test( 'a static method array is called without constructing the class', function() {
+	$app = new App();
+	$app->get( '/x', [ AppTestsStatic::class, 'show' ] );
+	$app->get( '/y', AppTestsStatic::class . '::show' );
+	expect( $app->handle( new Request( 'GET', '/x' ) )->body )->toBe( 'static' )
+		->and( $app->handle( new Request( 'GET', '/y' ) )->body )->toBe( 'static' );
+} );
+
+test( 'HTTP methods never reach magic methods on a class handler', function( string $method ) {
+	$app = new App();
+	$app->route( [ 'GET', '__CALL', '__CONSTRUCT' ], '/x', AppTestsMagic::class );
+	$r = $app->handle( new Request( $method, '/x' ) );
+	expect( $r->status )->toBe( 404 );
+} )->with( [ 'GET', '__CALL', '__CONSTRUCT' ] );
+
+test( 'a class with no usable methods leaves the path unknown, so 404', function() {
+	$app = new App();
+	$app->get( '/x', stdClass::class );
+	expect( $app->handle( new Request( 'GET', '/x' ) )->status )->toBe( 404 );
+} );
+
+test( 'a class and method handler uses a new instance per request', function() {
+	$app = new App();
+	$app->get( '/x', [ AppTestsMethods::class, 'show' ] );
+	$app->handle( new Request( 'GET', '/x' ) );
+	expect( $app->handle( new Request( 'GET', '/x' ) )->body )->toBe( 'show 1' );
+} );
+
+test( 'a function name wins over a class with the same name', function() {
+	$app = new App();
+	$app->get( '/x', 'app_tests_function' );
+	expect( $app->handle( new Request( 'GET', '/x' ) )->body )->toBe( 'function' );
 } );
