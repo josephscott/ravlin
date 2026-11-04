@@ -49,10 +49,33 @@ final class App {
 
 	public function handle( Request $req ) : Response {
 		$route = $this->router->match( $req->method, $req->path );
-		if ( $route === null ) {
-			$res = new Response( 'Not Found', 404 );
-			return $res;
+		if ( $route === null && $req->method === 'HEAD' ) {
+			$route = $this->router->match( 'GET', $req->path );
 		}
+		if ( $route === null ) {
+			$res = $this->no_route( $req );
+		} else {
+			$res = $this->dispatch( $route, $req );
+		}
+		if ( $req->method === 'HEAD' ) {
+			$res->set_body( '' );
+		}
+		return $res;
+	}
+
+	private function no_route( Request $req ) : Response {
+		$allowed = $this->router->allowed_methods( $req->path );
+		if ( $allowed === [] ) {
+			$res = new Response( 'Not Found', 404 );
+		} elseif ( $req->method === 'OPTIONS' ) {
+			$res = ( new Response( '', 204 ) )->set_header( 'Allow', implode( ', ', $allowed ) );
+		} else {
+			$res = ( new Response( 'Method Not Allowed', 405 ) )->set_header( 'Allow', implode( ', ', $allowed ) );
+		}
+		return $res;
+	}
+
+	private function dispatch( Route $route, Request $req ) : Response {
 		$handler = $route->handler;
 		if ( ! is_callable( $handler ) ) {
 			trigger_error( 'Route handler is not callable: ' . $route->path, E_USER_WARNING );

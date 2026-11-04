@@ -83,3 +83,73 @@ test( 'handle dispatches callables other than closures', function( mixed $handle
 		}
 	},
 ] );
+
+test( 'HEAD falls back to the GET route and sends no body', function() {
+	$app = new App();
+	$app->get( '/x', fn () => [ 'ok' => true ] );
+	$r = $app->handle( new Request( 'HEAD', '/x' ) );
+	expect( [ $r->status, $r->get_header( 'content-type' ), $r->body ] )->toBe( [ 200, 'application/json', '' ] );
+} );
+
+test( 'an explicit HEAD route wins over the GET fallback', function() {
+	$app = new App();
+	$app->get( '/x', fn () => 'get' );
+	$app->route( [ 'HEAD' ], '/x', fn () => new Response( 'head', 204 ) );
+	$r = $app->handle( new Request( 'HEAD', '/x' ) );
+	expect( [ $r->status, $r->body ] )->toBe( [ 204, '' ] );
+} );
+
+test( 'a known path with the wrong method gets a 405 with Allow', function() {
+	$app = new App();
+	$app->get( '/x', fn () => 'get' );
+	$app->post( '/x', fn () => 'post' );
+	$r = $app->handle( new Request( 'DELETE', '/x' ) );
+	expect( [ $r->status, $r->get_header( 'allow' ), $r->body ] )->toBe( [ 405, 'GET, POST, HEAD, OPTIONS', 'Method Not Allowed' ] );
+} );
+
+test( 'OPTIONS on a known path gets a 204 with Allow', function() {
+	$app = new App();
+	$app->post( '/x', fn () => 'post' );
+	$r = $app->handle( new Request( 'OPTIONS', '/x' ) );
+	expect( [ $r->status, $r->get_header( 'allow' ), $r->body ] )->toBe( [ 204, 'POST, OPTIONS', '' ] );
+} );
+
+test( 'an explicit OPTIONS route wins over the automatic response', function() {
+	$app = new App();
+	$app->route( [ 'OPTIONS' ], '/x', fn () => new Response( 'custom', 200 ) );
+	expect( $app->handle( new Request( 'OPTIONS', '/x' ) )->body )->toBe( 'custom' );
+} );
+
+test( 'HEAD responses never carry a body, including 404 and 405', function( string $path, int $status, ?string $allow ) {
+	$app = new App();
+	$app->post( '/post-only', fn () => 'post' );
+	$r = $app->handle( new Request( 'HEAD', $path ) );
+	expect( [ $r->status, $r->body, $r->get_header( 'allow' ) ] )->toBe( [ $status, '', $allow ] );
+} )->with( [ 'not found' => [ '/nope', 404, null ], 'wrong method' => [ '/post-only', 405, 'POST, OPTIONS' ] ] );
+
+test( 'OPTIONS and wrong methods on an unknown path still get a 404', function( string $method ) {
+	$r = ( new App() )->handle( new Request( $method, '/nope' ) );
+	expect( $r->status )->toBe( 404 );
+} )->with( [ 'OPTIONS', 'DELETE' ] );
+
+test( 'the HEAD fallback handler sees HEAD and its headers are kept', function() {
+	$app = new App();
+	$app->get( '/x', fn ( Request $req ) => ( new Response( 'body' ) )->set_header( 'X-Method', $req->method )->set_header( 'Content-Length', '4' ) );
+	$r = $app->handle( new Request( 'HEAD', '/x' ) );
+	expect( [ $r->get_header( 'x-method' ), $r->get_header( 'content-length' ), $r->body ] )->toBe( [ 'HEAD', '4', '' ] );
+} );
+
+test( 'HEAD does not empty a Response the handler keeps and reuses', function() {
+	$shared = new Response( 'cached-body' );
+	$app = new App();
+	$app->get( '/x', fn () => $shared );
+	$app->handle( new Request( 'HEAD', '/x' ) );
+	expect( $app->handle( new Request( 'GET', '/x' ) )->body )->toBe( 'cached-body' )->and( $shared->body )->toBe( 'cached-body' );
+} );
+
+test( 'an unknown method on a known path gets a 405', function() {
+	$app = new App();
+	$app->get( '/x', fn () => 'get' );
+	$r = $app->handle( new Request( 'FOO', '/x' ) );
+	expect( [ $r->status, $r->get_header( 'allow' ) ] )->toBe( [ 405, 'GET, HEAD, OPTIONS' ] );
+} );

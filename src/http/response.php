@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Ravlin\Http;
 
 final class Response {
+	public const TOKEN_PATTERN = '/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/D';
+
 	public private(set) array $headers = [];
 
 	public private(set) int $status = 200;
@@ -75,7 +77,7 @@ final class Response {
 	}
 
 	private function valid_header( string $name, string $value ) : bool {
-		if ( ! preg_match( '/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/D', $name ) ) {
+		if ( ! preg_match( self::TOKEN_PATTERN, $name ) ) {
 			trigger_error( 'Invalid header name', E_USER_WARNING );
 			return false;
 		}

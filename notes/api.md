@@ -36,6 +36,9 @@
 - `group( string $prefix, callable $fn )` — `$fn( Group $g )` registers `$g->get( ... )` etc. under the prefix
 - Params reach the handler via `Request::with_params( array $params ) : Request` — `@internal`, returns a copy
 - `handle( Request $req ) : Response` — no output, no globals; runtimes call it and send the result
+- HEAD falls back to the GET route (the handler sees `$req->method === 'HEAD'`); App always empties HEAD bodies
+- Runtimes must not compute `Content-Length` for HEAD from the emptied body — send only what the handler set
+- No route for the path → 404; path known but not the method → 405 + `Allow`; OPTIONS → 204 + `Allow`
 
 ## Built-in request handling (fixed order inside `App::handle()`, no public middleware API yet)
 1. Error handler — the one outermost `catch ( \Throwable )`: plain 500 in prod, detail page when `debug` is true
