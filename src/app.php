@@ -59,7 +59,16 @@ final class App {
 	}
 
 	private function to_response( mixed $result ) : Response {
-		$res = $result instanceof Response ? $result : Response::html( (string) $result );
+		if ( $result instanceof Response ) {
+			$res = $result;
+		} elseif ( is_string( $result ) ) {
+			$res = Response::html( $result );
+		} elseif ( is_array( $result ) ) {
+			$res = Response::json( $result );
+		} else {
+			trigger_error( 'Handler returned an unsupported type: ' . get_debug_type( $result ), E_USER_WARNING );
+			$res = new Response( '', 500 );
+		}
 		return $res;
 	}
 }
