@@ -53,14 +53,20 @@ final class App {
 			$res = new Response( 'Not Found', 404 );
 			return $res;
 		}
-		$result = ( $route->handler )( $req );
+		$handler = $route->handler;
+		if ( ! is_callable( $handler ) ) {
+			trigger_error( 'Route handler is not callable: ' . $route->path, E_USER_WARNING );
+			$res = new Response( '', 500 );
+			return $res;
+		}
+		$result = $handler( $req );
 		$res = $this->to_response( $result );
 		return $res;
 	}
 
 	private function to_response( mixed $result ) : Response {
 		if ( $result instanceof Response ) {
-			$res = $result;
+			$res = clone $result;
 		} elseif ( is_string( $result ) ) {
 			$res = Response::html( $result );
 		} elseif ( is_array( $result ) ) {

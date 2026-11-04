@@ -10,7 +10,19 @@ use Ravlin\Http\Response;
 final class Sapi {
 	public static function run( App $app ) : void {
 		$req = self::request();
+		$level = ob_get_level();
+		ob_start();
 		$res = $app->handle( $req );
+		$stray = '';
+		while ( ob_get_level() > $level ) {
+			$stray = ob_get_clean() . $stray;
+		}
+		if ( ob_get_level() < $level ) {
+			error_log( 'ravlin: a handler closed output buffers it did not open' );
+		}
+		if ( $stray !== '' ) {
+			error_log( 'ravlin: discarded ' . strlen( $stray ) . ' bytes of output produced while handling a request' );
+		}
 		self::send( $res );
 	}
 
