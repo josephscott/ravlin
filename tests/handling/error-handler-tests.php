@@ -16,6 +16,17 @@ function error_tests_throw( string $secret ) : never {
 	throw new RuntimeException( 'boom' );
 }
 
+function error_tests_deep( int $n ) : never {
+	if ( $n === 0 ) {
+		$e = null;
+		for ( $i = 0; $i < 15; $i++ ) {
+			$e = new RuntimeException( 'level ' . $i, 0, $e );
+		}
+		throw $e;
+	}
+	error_tests_deep( $n - 1 );
+}
+
 function error_tests_handle( App $app, string $method = 'GET' ) : array {
 	$result = capture_log( fn () => $app->handle( new Request( $method, '/x' ) ) );
 	return $result;
@@ -109,26 +120,24 @@ test( 'the log is one escaped line, includes the previous chain, and never inclu
 
 test( 'traces are capped at 50 frames and chains at 10 exceptions', function() {
 	$app = new App( [ 'debug' => true ] );
-	$app->get( '/x', function() {
-		$deep = function( int $n ) use ( &$deep ) {
-			if ( $n === 0 ) {
-				$e = null;
-				for ( $i = 0; $i < 15; $i++ ) {
-					$e = new RuntimeException( 'level ' . $i, 0, $e );
-				}
-				throw $e;
-			}
-			$deep( $n - 1 );
-		};
-		$deep( 80 );
-	} );
-	[ $r, $log ] = error_tests_handle( $app );
+	$app->get( '/x', fn () => error_tests_deep( 80 ) );
+	[ $r ] = error_tests_handle( $app );
 	$first = explode( '</ol>', $r->body )[0];
 	expect( substr_count( $r->body, '<h2>' ) )->toBe( 10 )
 		->and( substr_count( $first, '<li>' ) )->toBe( 51 )
 		->and( $first )->toContain( '<li>#49 ' )->not->toContain( '<li>#50 ' )
-		->and( $first )->toMatch( '/<li>\.\.\. \d+ more frames<\/li>$/' )
-		->and( $log )->toContain( 'more frames' );
+		->and( $first )->toMatch( '/<li>\.\.\. \d+ more frames<\/li>$/' );
+} );
+
+// Frames hold full file paths, so a long enough checkout path pushes the line past ErrorLog::MAX_LINE.
+test( 'the log line has the same capped frames, wherever the line limit cuts it', function() {
+	$app = new App();
+	$app->get( '/x', fn () => error_tests_deep( 80 ) );
+	[ , $log ] = error_tests_handle( $app );
+	$segments = explode( ' | previous: ', $log );
+	$first = count( $segments ) > 1 ? $segments[0] : '';
+	expect( $log )->toContain( ' #0 ' )->not->toContain( '#50 ' )
+		->and( $first === '' ? $log : $first )->toMatch( $first === '' ? '/\.\.\.\[truncated\]\n$/' : '/ #49 [^#]+ \.\.\. \d+ more frames$/' );
 } );
 
 test( 'huge messages are truncated in the log and the page', function() {
