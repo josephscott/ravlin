@@ -172,6 +172,80 @@ test( 'add skips routes with an invalid path, with a warning', function( string 
 		->and( $router->match( 'GET', $path )->route )->toBeNull();
 } )->with( [
 	'no leading slash' => 'posts', 'unclosed' => '/posts/{id', 'prefixed' => '/posts/x{id}', 'digit name' => '/posts/{1id}',
-	'constraint' => '/posts/{id:int}', 'repeated name' => '/a/{id}/{id}', 'empty name' => '/posts/{}',
+	'repeated name' => '/a/{id}/{id}', 'empty name' => '/posts/{}',
 	'trailing newline' => "/x/{a}\n", 'NUL' => "/raw\0", 'percent' => '/caf%C3%A9', 'invalid UTF-8' => "/\xFF",
+	'empty constraint' => '/posts/{id:}', 'bad regex' => '/posts/{id:[}', 'hash in regex' => '/posts/{id:a#b}',
+	'regex with control byte' => "/posts/{id:a\tb}", 'unknown type is a literal regex, bad' => '/posts/{id:int(}',
+	'trailing backslash' => '/posts/{id:x\\}', 'unterminated \\Q' => '/posts/{id:\\Qab}',
 ] );
+
+test( 'int constraints match digits only and keep the value a string', function( string $path, ?array $params ) {
+	$router = new Router();
+	$router->add( [ 'GET' ], '/posts/{id:int}', 'h' );
+	expect( $router->match( 'GET', $path )->route === null ? null : $router->match( 'GET', $path )->params )->toBe( $params );
+} )->with( [
+	'digits' => [ '/posts/42', [ 'id' => '42' ] ],
+	'leading zeros' => [ '/posts/007', [ 'id' => '007' ] ],
+	'encoded digit' => [ '/posts/%34', [ 'id' => '4' ] ],
+	'letters' => [ '/posts/abc', null ],
+	'negative' => [ '/posts/-1', null ],
+	'decimal' => [ '/posts/1.5', null ],
+	'trailing newline' => [ "/posts/1\n", null ],
+	'encoded slash' => [ '/posts/1%2F2', null ],
+	'unicode digit' => [ '/posts/%D9%A3', null ],
+] );
+
+test( 'custom regex constraints match the whole decoded segment', function( string $route, string $path, bool $hit ) {
+	$router = new Router();
+	$router->add( [ 'GET' ], $route, 'h' );
+	expect( $router->match( 'GET', $path )->route !== null )->toBe( $hit );
+} )->with( [
+	'slug' => [ '/tags/{slug:[a-z-]+}', '/tags/php-8', false ],
+	'slug ok' => [ '/tags/{slug:[a-z-]+}', '/tags/php-x', true ],
+	'braces in regex' => [ '/y/{year:[0-9]{4}}', '/y/2026', true ],
+	'braces too long' => [ '/y/{year:[0-9]{4}}', '/y/20261', false ],
+	'alternation is grouped' => [ '/f/{fmt:json|xml}', '/f/jsonx', false ],
+	'alternation ok' => [ '/f/{fmt:json|xml}', '/f/xml', true ],
+	'unanchoring regex, prefix' => [ '/x/{v:a)|(b}', '/x/axyz', false ],
+	'unanchoring regex, suffix' => [ '/x/{v:a)|(b}', '/x/xyzb', false ],
+	'percent allowed in regex' => [ '/p/{n:[0-9]+%}', '/p/50%25', true ],
+	'utf-8 decoded before the check' => [ '/t/{t:caf.}', '/t/caf%C3%A9', true ],
+	'\\K cannot shorten the match' => [ '/k/{k:abc\\Kd}', '/k/abcd', false ],
+	'(*ACCEPT) cannot end early' => [ '/k/{k:a(*ACCEPT)}', '/k/abc', false ],
+] );
+
+test( 'a failed constraint falls through to later routes, then to 404', function() {
+	$router = new Router();
+	$router->add( [ 'GET' ], '/posts/{id:int}', 'by-id' );
+	$router->add( [ 'GET' ], '/posts/{slug}', 'by-slug' );
+	$router->add( [ 'DELETE' ], '/items/{id:int}', 'delete' );
+	expect( $router->match( 'GET', '/posts/5' )->route?->handler )->toBe( 'by-id' )
+		->and( $router->match( 'GET', '/posts/hello' )->route?->handler )->toBe( 'by-slug' )
+		->and( $router->match( 'GET', '/items/abc' )->allowed )->toBe( [] )
+		->and( $router->match( 'GET', '/items/5' )->allowed )->toBe( [ 'DELETE', 'OPTIONS' ] );
+} );
+
+test( 'a PCRE error in a constraint fails closed with a warning instead of falling through', function() {
+	$router = new Router();
+	$router->add( [ 'GET' ], '/r/{a:(\\w|\\w)+}', 'constrained' );
+	$router->add( [ 'GET' ], '/r/{a}', 'next' );
+	$jit = ini_set( 'pcre.jit', '0' );
+	$limit = ini_set( 'pcre.backtrack_limit', '100' );
+	[ $matched, $warnings ] = capture_warnings( fn () => $router->match( 'GET', '/r/aaaaaaaaaaaa-' ) );
+	ini_set( 'pcre.jit', (string) $jit );
+	ini_set( 'pcre.backtrack_limit', (string) $limit );
+	expect( [ $matched->route, $matched->allowed ] )->toBe( [ null, [] ] )
+		->and( $warnings )->toBe( [ 'Route constraint failed, Backtrack limit exhausted: /r/{a:(\\w|\\w)+}' ] );
+} );
+
+test( 'HEAD falls back to a constrained GET route only when the constraint passes', function() {
+	$router = new Router();
+	$router->add( [ 'GET' ], '/posts/{id:int}', 'h' );
+	expect( $router->match( 'HEAD', '/posts/5' )->route?->handler )->toBe( 'h' )
+		->and( $router->match( 'HEAD', '/posts/x' )->route )->toBeNull();
+} );
+
+test( 'a bad constraint regex warns once, without the PCRE compile warning', function() {
+	[ , $warnings ] = capture_warnings( fn () => ( new Router() )->add( [ 'GET' ], '/x/{a:[}', 'h' ) );
+	expect( $warnings )->toBe( [ 'Invalid route path skipped: /x/{a:[}' ] );
+} );

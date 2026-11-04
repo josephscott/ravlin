@@ -6,7 +6,9 @@ namespace Ravlin\Routing;
 use Ravlin\Http\Response;
 
 final class Router {
-	private const PARAM_PATTERN = '/^\{([A-Za-z_][A-Za-z0-9_]*)\}$/D';
+	private const PARAM_PATTERN = '/^\{([A-Za-z_][A-Za-z0-9_]*)(?::(.+))?\}$/Ds';
+
+	private const TYPES = [ 'int' => '[0-9]+' ];
 
 	private const SAFE_PATH_PATTERN = '/^[^\x00-\x1F\x7F\x{80}-\x{9F}]*$/Du';
 
@@ -22,14 +24,13 @@ final class Router {
 			}
 		}
 		$route = new Route( $valid, $path, $handler );
-		$params = $this->compile( $path );
-		$segments = explode( '/', $path );
-		if ( $params === null ) {
+		$compiled = $this->compile( $path );
+		if ( $compiled === null ) {
 			trigger_error( 'Invalid route path skipped: ' . $path, E_USER_WARNING );
 		} elseif ( $valid === [] ) {
 			trigger_error( 'Route with no valid HTTP methods skipped: ' . $path, E_USER_WARNING );
 		} else {
-			$this->routes[count( $segments )][] = [ 'route' => $route, 'segments' => $segments, 'params' => $params ];
+			$this->routes[count( $compiled['segments'] )][] = [ 'route' => $route ] + $compiled;
 		}
 		return $route;
 	}
@@ -41,6 +42,11 @@ final class Router {
 		$allowed = [];
 		foreach ( $segments === null ? [] : ( $this->routes[count( $segments )] ?? [] ) as $entry ) {
 			$params = $this->match_segments( $entry, $segments );
+			if ( $params === false ) {
+				$fallback = null;
+				$allowed = [];
+				break;
+			}
 			if ( $params === null ) {
 				continue;
 			}
@@ -59,18 +65,35 @@ final class Router {
 	}
 
 	private function compile( string $path ) : ?array {
+		$segments = explode( '/', $path );
 		$params = [];
-		$valid = str_starts_with( $path, '/' ) && ! str_contains( $path, '%' ) && preg_match( self::SAFE_PATH_PATTERN, $path ) === 1;
-		foreach ( explode( '/', $path ) as $i => $segment ) {
+		$constraints = [];
+		$valid = str_starts_with( $path, '/' ) && preg_match( self::SAFE_PATH_PATTERN, $path ) === 1;
+		foreach ( $segments as $i => $segment ) {
 			if ( preg_match( self::PARAM_PATTERN, $segment, $m ) ) {
 				$valid = $valid && ! in_array( $m[1], $params, true );
 				$params[$i] = $m[1];
-			} elseif ( strpbrk( $segment, '{}' ) !== false ) {
+				if ( isset( $m[2] ) ) {
+					$constraints[$m[1]] = $this->constraint( $m[2] );
+					$valid = $valid && $constraints[$m[1]] !== null;
+				}
+			} elseif ( strpbrk( $segment, '{}%' ) !== false ) {
 				$valid = false;
 			}
 		}
-		$result = $valid ? $params : null;
-		return $result;
+		$compiled = $valid ? [ 'segments' => $segments, 'params' => $params, 'constraints' => $constraints ] : null;
+		return $compiled;
+	}
+
+	private function constraint( string $pattern ) : ?string {
+		$regex = '#\A(?:' . ( self::TYPES[$pattern] ?? $pattern ) . ')\z#u';
+		set_error_handler( fn () => true );
+		$compiles = ! str_contains( $pattern, '#' ) && preg_match( $regex, '' ) !== false;
+		restore_error_handler();
+		if ( ! $compiles ) {
+			$regex = null;
+		}
+		return $regex;
 	}
 
 	private function decode( string $path ) : ?array {
@@ -84,7 +107,7 @@ final class Router {
 		return $segments;
 	}
 
-	private function match_segments( array $entry, array $segments ) : ?array {
+	private function match_segments( array $entry, array $segments ) : array|false|null {
 		$params = null;
 		if ( $entry['params'] === [] ) {
 			$params = $segments === $entry['segments'] ? [] : null;
@@ -99,6 +122,18 @@ final class Router {
 				}
 				if ( $name !== null ) {
 					$params[$name] = $segments[$i];
+				}
+			}
+			foreach ( $params === null ? [] : $entry['constraints'] as $name => $regex ) {
+				$result = preg_match( $regex, $params[$name], $m );
+				if ( $result === false ) {
+					trigger_error( 'Route constraint failed, ' . preg_last_error_msg() . ': ' . $entry['route']->path, E_USER_WARNING );
+					$params = false;
+					break;
+				}
+				if ( $result !== 1 || $m[0] !== $params[$name] ) {
+					$params = null;
+					break;
 				}
 			}
 		}

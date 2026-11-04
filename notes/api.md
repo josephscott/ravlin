@@ -33,6 +33,10 @@
 - `::class` forms: `new Class( $app )` per request, only for the matched route — no state carried between requests
 - `[ $object, 'method' ]`: one object reused across requests in worker runtimes — keep it stateless
 - Paths: `/posts/{id}`, `/posts/{id:int}`, `/tags/{slug:[a-z-]+}` — read with `$req->get_param( 'id' )`, always a string
+- Constraints: `int` = `[0-9]+`; anything else is a regex for the whole decoded segment (no `/` or `#`); bad regex → route skipped with a warning
+- A failed constraint means the route doesn't match: later routes are tried, then 404 (not 405)
+- Constraint regexes use `/u`, so `\d` and `\w` match Unicode — use `[0-9]`, `[A-Za-z0-9_]`; `int` has no length limit, `(int)` saturates; type names are case-sensitive
+- Avoid nested quantifiers; a PCRE error (backtrack/JIT limit) fails closed → 404 with a warning naming the route
 - Each request path segment is percent-decoded once on its own (`rawurldecode`, `+` stays `+`); literals compare decoded, `%2F` stays inside a param
 - Params are never empty and may contain `/` or `..` — never use one as a file path without a constraint
 - A decoded path with control bytes (`\x00`–`\x1F`, `\x7F`, U+0080–U+009F) or invalid UTF-8 matches nothing → 404
