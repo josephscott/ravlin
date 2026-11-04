@@ -153,3 +153,31 @@ test( 'an unknown method on a known path gets a 405', function() {
 	$r = $app->handle( new Request( 'FOO', '/x' ) );
 	expect( [ $r->status, $r->get_header( 'allow' ) ] )->toBe( [ 405, 'GET, HEAD, OPTIONS' ] );
 } );
+
+test( 'handlers read route params from the request', function() {
+	$app = new App();
+	$app->get( '/users/{name}', fn ( Request $req ) => [ 'name' => $req->get_param( 'name' ), 'missing' => $req->get_param( 'nope' ) ] );
+	expect( $app->handle( new Request( 'GET', '/users/ana%20b' ) )->body )->toBe( '{"name":"ana b","missing":null}' );
+} );
+
+test( 'the HEAD fallback and 405 work for param routes', function() {
+	$app = new App();
+	$app->get( '/users/{name}', fn ( Request $req ) => $req->get_param( 'name' ) );
+	$head = $app->handle( new Request( 'HEAD', '/users/x' ) );
+	$wrong = $app->handle( new Request( 'POST', '/users/x' ) );
+	expect( [ $head->status, $head->body, $wrong->status, $wrong->get_header( 'allow' ) ] )->toBe( [ 200, '', 405, 'GET, HEAD, OPTIONS' ] );
+} );
+
+test( 'route params do not leak into the original request', function() {
+	$app = new App();
+	$app->get( '/users/{name}', fn () => 'ok' );
+	$req = new Request( 'GET', '/users/x' );
+	$app->handle( $req );
+	expect( $req->params )->toBe( [] );
+} );
+
+test( 'a param with invalid UTF-8 is a 404, not a 500', function() {
+	$app = new App();
+	$app->get( '/hello/{name}', fn ( Request $req ) => [ 'name' => $req->get_param( 'name' ) ] );
+	expect( $app->handle( new Request( 'GET', '/hello/%FF' ) )->status )->toBe( 404 );
+} );

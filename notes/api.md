@@ -33,6 +33,11 @@
 - `::class` forms: `new Class( $app )` per request, only for the matched route — no state carried between requests
 - `[ $object, 'method' ]`: one object reused across requests in worker runtimes — keep it stateless
 - Paths: `/posts/{id}`, `/posts/{id:int}`, `/tags/{slug:[a-z-]+}` — read with `$req->get_param( 'id' )`, always a string
+- Each request path segment is percent-decoded once on its own (`rawurldecode`, `+` stays `+`); literals compare decoded, `%2F` stays inside a param
+- Params are never empty and may contain `/` or `..` — never use one as a file path without a constraint
+- A decoded path with control bytes (`\x00`–`\x1F`, `\x7F`, U+0080–U+009F) or invalid UTF-8 matches nothing → 404
+- Route paths are written decoded (`/café`, not `/caf%C3%A9`); a `%`, control byte, bad `{...}` or no valid methods → skipped with a warning
+- `$req->path` stays raw (`/%61dmin` matches the `/admin` route) — authorize by route or group, never by string checks on `$req->path`
 - `group( string $prefix, callable $fn )` — `$fn( Group $g )` registers `$g->get( ... )` etc. under the prefix
 - Params reach the handler via `Request::with_params( array $params ) : Request` — `@internal`, returns a copy
 - `handle( Request $req ) : Response` — no output, no globals; runtimes call it and send the result

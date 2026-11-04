@@ -48,14 +48,11 @@ final class App {
 	}
 
 	public function handle( Request $req ) : Response {
-		$route = $this->router->match( $req->method, $req->path );
-		if ( $route === null && $req->method === 'HEAD' ) {
-			$route = $this->router->match( 'GET', $req->path );
-		}
-		if ( $route === null ) {
-			$res = $this->no_route( $req );
+		$matched = $this->router->match( $req->method, $req->path );
+		if ( $matched->route === null ) {
+			$res = $this->no_route( $req, $matched->allowed );
 		} else {
-			$res = $this->dispatch( $route, $req );
+			$res = $this->dispatch( $matched->route, $req->with_params( $matched->params ) );
 		}
 		if ( $req->method === 'HEAD' ) {
 			$res->set_body( '' );
@@ -63,8 +60,7 @@ final class App {
 		return $res;
 	}
 
-	private function no_route( Request $req ) : Response {
-		$allowed = $this->router->allowed_methods( $req->path );
+	private function no_route( Request $req, array $allowed ) : Response {
 		if ( $allowed === [] ) {
 			$res = new Response( 'Not Found', 404 );
 		} elseif ( $req->method === 'OPTIONS' ) {
