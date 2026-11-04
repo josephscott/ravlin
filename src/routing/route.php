@@ -15,7 +15,7 @@ final class Route {
 	) {}
 
 	public function set_option( string $name, mixed $value ) : self {
-		$valid = ( self::OPTIONS[$name] ?? null ) === get_debug_type( $value ) && ( ! is_string( $value ) || preg_match( '/^[\x20-\x7E]+$/D', $value ) === 1 );
+		$valid = ( self::OPTIONS[$name] ?? null ) === get_debug_type( $value ) && ( ! is_string( $value ) || preg_match( '/^[\x21-\x7E](?:[\x20-\x7E]*[\x21-\x7E])?$/D', $value ) === 1 );
 		if ( $valid ) {
 			$this->options[$name] = $value;
 		} else {

@@ -13,10 +13,13 @@
 ## Request — read-only for users (`private(set)`), built by the runtime adapter
 - `$method` (uppercase), `$path` (raw, no query string; the router decodes each segment), `$body` (raw), `$headers` — same shape as Response
 - `get_header( string $name ) : ?string` — identical to Response
+- Header values are a string or a list of strings; any other value or list item (int, null, object, nested array, an empty list) → warning, replaced with `''` so the value count stays — reading headers never fails, and the CSRF check rejects the empty values; numeric names (`123:`) are kept
 - `$query`, `$form`, `$cookies` — readable arrays, like `$headers`; `$params` (route) — `array<string, string>`
 - `get_query( string $name ) : string|array|null`, same for `get_form()` and `get_cookie()` — null = missing
 - `get_param( string $name ) : ?string` — route params are never arrays; constraints check format, value stays a string
-- `json() : mixed` — decoded body; invalid-JSON handling TBD (no exceptions); `is_https() : bool`
+- `json() : mixed` — decoded body; invalid-JSON handling TBD (no exceptions)
+- `$https` — true when the runtime saw a TLS connection (`$_SERVER['HTTPS']` under SAPI); proxies' `X-Forwarded-Proto` is not trusted here
+- `$csp_nonce` — this request's CSP nonce (16 random bytes, base64), set by `handle()` before routing; `''` on a Request that was never handled
 
 ## Shared conventions
 - Verbs: `get_*` reads, `set_*` replaces, `add_*` appends, `remove_*` deletes — same everywhere
@@ -83,11 +86,26 @@
 - Per route `set_option( 'csrf', false|true )` beats the global setting
 - Signed double-submit token: deferred to the cookies milestone (needs keys, `Set-Cookie`, the form helper) — defense in depth on top of the header checks
 3. Route match → `with_params()` → handler; string/array return converted to a Response
-4. Security headers — CSP with per-request nonce, nosniff, frame-ancestors, Referrer-Policy, COOP, CORP, HSTS on HTTPS
-- Security headers are added to every response, including the 500 from step 1 and the 403 from step 2 (not built yet)
-- Config switches: `csrf`, `security_headers` (`true`/`false` or an array of overrides)
-- Per route: `->set_option( 'csrf', false )` (e.g. webhooks), `->set_option( 'csp', '...' )`; `get_option( $name )` → null when unset
-- Only known options with the right type (`csrf` bool, `csp` non-empty printable ASCII) are kept; anything else → warning
+4. Security headers — last step of `handle()`, on every response it returns: 200s, 403 (CSRF), 404, 405, automatic OPTIONS, every 500 (including the debug page)
+- `Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-…'; style-src 'self' 'nonce-…'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+- Inline `<script>`/`<style>` need `nonce="<?= $req->csp_nonce ?>"`; `style="…"` attributes, `on*=` handlers and `javascript:` URLs are blocked; images, fonts, fetch only from the same origin (`data:` images too are blocked)
+- `form-action 'self'` is enforced on the page holding the form, and Chromium also checks redirects after the submit: a form POST that redirects to another origin (OAuth/SSO, payments) is blocked — loosen `form-action` on the pages with those forms; a `csp` option on the POST route doesn't help
+- Never put the nonce in cached HTML or reuse a Response that already carries a CSP: a handler-set header wins, so a cached CSP keeps its old nonce (a cached body with an old nonce just gets its inline scripts blocked)
+- `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`
+- `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`, no preload) only when `$req->https` or the first `X-Forwarded-Proto` value is `https`; a spoofed `X-Forwarded-Proto` only adds HSTS to a plain-HTTP response, which browsers ignore (RFC 6797 §8.1) — unless a shared cache sits behind the TLS terminator, where it can only cache HSTS for a host that already serves HTTPS; RFC 7239 `Forwarded: proto=https` is not read
+- HSTS also goes out on `https://localhost` (FrankenPHP/Caddy serve it in dev) — turn it off in dev config (`'strict-transport-security' => false`) if browsers pin your localhost
+- Not `no-referrer`: with it, browsers send `Origin: null` on same-origin form POSTs; browsers with `Sec-Fetch-Site` still pass, but the CSRF `Origin` fallback rejects them — the same applies to `no-referrer` set by a handler, `<meta name="referrer">` or `rel="noreferrer"` on a form
+- No `X-Frame-Options` (`frame-ancestors` replaces it in every current browser) and no `Permissions-Policy` by default
+- Precedence: a header the handler set > the route's `csp` option > config > defaults; ravlin never overwrites or repeats a header, and never touches a Response object the handler returned (it works on a copy)
+- `{nonce}` in any configured value or route `csp` option is replaced with `$req->csp_nonce`
+- Config `security_headers`: `true` (default; `null` means the same), `false` (none — a route `csp` option still applies), or `[ 'Header-Name' => 'value' | false ]` for the six headers above (case-insensitive name — names differing only in case: the last wins; printable ASCII value with no leading or trailing space, `false` drops it); other names or values → warning, entry skipped; any other config → warning, defaults stay
+- `Sapi::run()` removes PHP's `X-Powered-By` (`expose_php`) before handling, so the shutdown 500 doesn't carry it either; `Sapi::send()` removes it again for runtimes that reuse `send()` without `run()` (the FrankenPHP worker)
+- Not covered: the `Sapi` shutdown 500 after `exit`/fatal (empty body, no ravlin headers); responses from static files the web server serves itself
+- No per-route way to drop a default header yet (the `csp` option can only replace the policy); a handler can replace any of them with its own value
+- 404 and 405 bodies are `text/plain; charset=utf-8`
+- Config switches: `csrf`, `security_headers`
+- Per route: `->set_option( 'csrf', false )` (e.g. webhooks), `->set_option( 'csp', "default-src 'self'; script-src 'nonce-{nonce}'" )` (replaces the whole policy; printable ASCII, no leading or trailing space); `get_option( $name )` → null when unset
+- Only known options with the right type (`csrf` bool, `csp` printable ASCII without leading or trailing space) are kept; anything else → warning
 
 ## Runtimes — each takes the App; the App never knows which runtime runs it
 - `Sapi::run( App $app ) : void` — php -S, php-fpm, FrankenPHP classic; Request from superglobals + `php://input`, sent with `header()`/`echo`

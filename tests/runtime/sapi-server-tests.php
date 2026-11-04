@@ -5,7 +5,7 @@ function sapi_server_start( string $log ) : array {
 	$server = null;
 	for ( $try = 0; $try < 5 && $server === null; $try++ ) {
 		$port = random_int( 20000, 60000 );
-		$cmd = [ PHP_BINARY, '-d', 'display_errors=1', '-d', 'error_reporting=-1', '-d', 'error_log=' . $log, '-S', '127.0.0.1:' . $port, __DIR__ . '/../fixtures/sapi-app.php' ];
+		$cmd = [ PHP_BINARY, '-d', 'expose_php=1', '-d', 'display_errors=1', '-d', 'error_reporting=-1', '-d', 'error_log=' . $log, '-S', '127.0.0.1:' . $port, __DIR__ . '/../fixtures/sapi-app.php' ];
 		$proc = proc_open( $cmd, [ [ 'pipe', 'r' ], [ 'file', '/dev/null', 'w' ], [ 'file', '/dev/null', 'w' ] ], $pipes );
 		for ( $wait = 0; $wait < 50; $wait++ ) {
 			[ $socket ] = capture_warnings( fn () => fsockopen( '127.0.0.1', $port, $errno, $errstr, 0.1 ) );
@@ -83,4 +83,32 @@ test( 'under php -S, CSRF protection sees the browser headers', function() {
 		'own Origin' => [ 200, 'posted' ],
 		'foreign Origin' => [ 403, 'Forbidden' ],
 	] );
+} );
+
+test( 'under php -S, responses carry the security headers and no X-Powered-By', function() {
+	if ( ! function_exists( 'proc_open' ) ) {
+		$this->markTestSkipped( 'proc_open is disabled' );
+	}
+	$log = (string) tempnam( sys_get_temp_dir(), 'ravlin-server-log' );
+	[ $proc, $port ] = sapi_server_start( $log );
+	expect( $proc )->not->toBeNull();
+	$headers = [];
+	foreach ( [ 'plain' => [ '123: x' ], 'forwarded https' => [ 'X-Forwarded-Proto: https' ] ] as $name => $sent ) {
+		sapi_server_get( $port, '/ok', 'GET', $sent );
+		$headers[$name] = strtolower( implode( "\n", http_get_last_response_headers() ?? [] ) );
+	}
+	sapi_server_get( $port, '/throw' );
+	$headers['500'] = strtolower( implode( "\n", http_get_last_response_headers() ?? [] ) );
+	sapi_server_get( $port, '/exit' );
+	$headers['exit'] = strtolower( implode( "\n", http_get_last_response_headers() ?? [] ) );
+	proc_terminate( $proc );
+	proc_close( $proc );
+	$logged = (string) file_get_contents( $log );
+	unlink( $log );
+	expect( $logged )->not->toContain( 'Request header' )
+		->and( $headers['plain'] )->toContain( "content-security-policy: default-src 'self'; script-src 'self' 'nonce-" )
+		->toContain( 'x-content-type-options: nosniff' )->not->toContain( 'x-powered-by' )->not->toContain( 'strict-transport-security' )
+		->and( $headers['forwarded https'] )->toContain( 'strict-transport-security: max-age=31536000' )->not->toContain( 'x-powered-by' )
+		->and( $headers['500'] )->toContain( 'x-content-type-options: nosniff' )->not->toContain( 'x-powered-by' )
+		->and( $headers['exit'] )->toContain( ' 500 ' )->not->toContain( 'x-powered-by' );
 } );

@@ -24,10 +24,19 @@ test( 'set_option skips unknown names, wrong types and control bytes, with a war
 	'csp empty' => [ 'csp', '' ],
 	'csp non-ASCII' => [ 'csp', "default-src \xC3\xA9" ],
 	'csp with tab' => [ 'csp', "default-src\t'self'" ],
+	'csp only a space' => [ 'csp', ' ' ],
+	'csp with a leading space' => [ 'csp', " default-src 'self'" ],
+	'csp with a trailing space' => [ 'csp', "default-src 'self' " ],
+	'csp with a trailing new line' => [ 'csp', "default-src 'self'\n" ],
 ] );
 
 test( 'options set on the returned route are seen on the route the router matches', function() {
 	$router = new Ravlin\Routing\Router();
 	$router->add( [ 'POST' ], '/hook', 'h' )->set_option( 'csrf', false );
 	expect( $router->match( 'POST', '/hook' )->route?->get_option( 'csrf' ) )->toBeFalse();
+} );
+
+test( 'a single-character csp option is kept', function() {
+	[ $route, $warnings ] = capture_warnings( fn () => ( new Route( [ 'GET' ], '/x', 'h' ) )->set_option( 'csp', 'a' ) );
+	expect( [ $route->get_option( 'csp' ), $warnings ] )->toBe( [ 'a', [] ] );
 } );

@@ -54,3 +54,21 @@ test( 'run leaves an app error handler in place', function() {
 	[ [ $out, $log ], $warnings ] = capture_warnings( fn () => sapi_tests_run( $app ) );
 	expect( [ $out, $warnings ] )->toBe( [ 'ok', [ 'to the app' ] ] )->and( $log )->not->toContain( 'to the app' );
 } );
+
+test( 'request marks HTTPS the way web servers report it', function( ?string $value, bool $https ) {
+	$server = $_SERVER;
+	unset( $_SERVER['HTTPS'] );
+	if ( $value !== null ) {
+		$_SERVER['HTTPS'] = $value;
+	}
+	$req = Sapi::request();
+	$_SERVER = $server;
+	expect( $req->https )->toBe( $https );
+} )->with( [
+	'unset' => [ null, false ],
+	'empty' => [ '', false ],
+	'off (IIS)' => [ 'off', false ],
+	'OFF' => [ 'OFF', false ],
+	'on' => [ 'on', true ],
+	'1' => [ '1', true ],
+] );

@@ -6,6 +6,7 @@ namespace Ravlin;
 use Ravlin\Handling\Csrf;
 use Ravlin\Handling\ErrorHandler;
 use Ravlin\Handling\ErrorLog;
+use Ravlin\Handling\SecurityHeaders;
 use Ravlin\Http\Request;
 use Ravlin\Http\Response;
 use Ravlin\Routing\Group;
@@ -24,6 +25,8 @@ final class App {
 
 	private Csrf $csrf;
 
+	private SecurityHeaders $security_headers;
+
 	private bool $debug;
 
 	public function __construct(
@@ -41,6 +44,7 @@ final class App {
 			$csrf = true;
 		}
 		$this->csrf = new Csrf( $csrf !== false, is_array( $csrf ) ? ( $csrf['trusted_origins'] ?? [] ) : [] );
+		$this->security_headers = new SecurityHeaders( $config['security_headers'] ?? true );
 	}
 
 	public function route( array $methods, string $path, mixed $handler ) : Route {
@@ -87,6 +91,7 @@ final class App {
 			return $out;
 		} );
 		try {
+			$req = $req->with_csp_nonce( base64_encode( random_bytes( 16 ) ) );
 			$res = $this->route_request( $req );
 			$clean = $this->discard_output( $level, $capture );
 		} catch ( \Throwable $e ) {
@@ -96,6 +101,7 @@ final class App {
 		if ( ! $clean ) {
 			$res = Response::server_error();
 		}
+		$this->security_headers->apply( $res, $req );
 		if ( $req->method === 'HEAD' ) {
 			$res->set_body( '' );
 		}
@@ -142,17 +148,21 @@ final class App {
 			$res = ( new Response( 'Forbidden', 403 ) )->set_header( 'Content-Type', 'text/plain; charset=utf-8' );
 		} else {
 			$res = $this->dispatch( $matched->route, $req->with_params( $matched->params ) );
+			$csp = $matched->route->get_option( 'csp' );
+			if ( is_string( $csp ) && $res->get_header( 'content-security-policy' ) === null ) {
+				$res->set_header( 'Content-Security-Policy', SecurityHeaders::with_nonce( $csp, $req ) );
+			}
 		}
 		return $res;
 	}
 
 	private function no_route( Request $req, array $allowed ) : Response {
 		if ( $allowed === [] ) {
-			$res = new Response( 'Not Found', 404 );
+			$res = ( new Response( 'Not Found', 404 ) )->set_header( 'Content-Type', 'text/plain; charset=utf-8' );
 		} elseif ( $req->method === 'OPTIONS' ) {
 			$res = ( new Response( '', 204 ) )->set_header( 'Allow', implode( ', ', $allowed ) );
 		} else {
-			$res = ( new Response( 'Method Not Allowed', 405 ) )->set_header( 'Allow', implode( ', ', $allowed ) );
+			$res = ( new Response( 'Method Not Allowed', 405 ) )->set_header( 'Allow', implode( ', ', $allowed ) )->set_header( 'Content-Type', 'text/plain; charset=utf-8' );
 		}
 		return $res;
 	}

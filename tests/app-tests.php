@@ -127,14 +127,14 @@ test( 'handle passes the request to the handler', function() {
 } );
 
 test( 'handle returns the plain 500 with a warning for unsupported handler results', function( mixed $result ) {
-	$app = new App();
+	$app = new App( [ 'security_headers' => false ] );
 	$app->get( '/x', fn () => $result );
 	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
 	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, 'Internal Server Error', [ 'content-type' => [ 'text/plain; charset=utf-8' ], 'cache-control' => [ 'no-store' ] ] ] )->and( $warnings )->toHaveCount( 1 );
 } )->with( [ 'null' => null, 'int' => 42, 'object' => new stdClass() ] );
 
 test( 'handle returns the plain 500 with a warning when the handler is not callable', function( mixed $handler ) {
-	$app = new App();
+	$app = new App( [ 'security_headers' => false ] );
 	$app->get( '/x', $handler );
 	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
 	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, 'Internal Server Error', [ 'content-type' => [ 'text/plain; charset=utf-8' ], 'cache-control' => [ 'no-store' ] ] ] )->and( $warnings )->toBe( [ 'Route handler is not callable: /x' ] );
@@ -153,11 +153,12 @@ test( 'handle returns a copy of a Response the handler returns', function() {
 	$first = $app->handle( new Request( 'GET', '/x' ) );
 	$first->add_header( 'X-Per-Request', 'one' );
 	$second = $app->handle( new Request( 'GET', '/x' ) );
-	expect( $second )->not->toBe( $shared )->not->toBe( $first )->and( $second->headers )->toBe( [] )->and( $second->body )->toBe( 'cached' );
+	expect( $second )->not->toBe( $shared )->not->toBe( $first )->and( $shared->headers )->toBe( [] )
+		->and( $second->get_header( 'x-per-request' ) )->toBeNull()->and( $second->get_header( 'x-content-type-options' ) )->toBe( 'nosniff' )->and( $second->body )->toBe( 'cached' );
 } );
 
 test( 'handle returns the plain 500 when an array result cannot be JSON encoded', function() {
-	$app = new App();
+	$app = new App( [ 'security_headers' => false ] );
 	$app->get( '/x', fn () => [ 'bad' => "\xB1\x31" ] );
 	[ $r, $warnings ] = capture_warnings( fn () => $app->handle( new Request( 'GET', '/x' ) ) );
 	expect( [ $r->status, $r->body, $r->headers ] )->toBe( [ 500, 'Internal Server Error', [ 'content-type' => [ 'text/plain; charset=utf-8' ], 'cache-control' => [ 'no-store' ] ] ] )->and( $warnings )->toHaveCount( 1 )

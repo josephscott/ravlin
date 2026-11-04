@@ -10,6 +10,7 @@ use Ravlin\Http\Response;
 
 final class Sapi {
 	public static function run( App $app ) : void {
+		header_remove( 'X-Powered-By' );
 		$log = new ErrorLog();
 		$handler = $log->install();
 		$state = new \ArrayObject( [ 'sent' => false ] );
@@ -39,11 +40,13 @@ final class Sapi {
 		$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 		$path = explode( '?', $_SERVER['REQUEST_URI'] ?? '/', 2 )[0];
 		$body = (string) file_get_contents( 'php://input' );
-		$req = new Request( $method, $path, $_GET, $_POST, $_COOKIE, $headers, $body );
+		$https = strtolower( (string) ( $_SERVER['HTTPS'] ?? '' ) );
+		$req = new Request( $method, $path, $_GET, $_POST, $_COOKIE, $headers, $body, $https !== '' && $https !== 'off' );
 		return $req;
 	}
 
 	public static function send( Response $res ) : void {
+		header_remove( 'X-Powered-By' );
 		http_response_code( $res->status );
 		foreach ( $res->headers as $name => $values ) {
 			foreach ( $values as $value ) {

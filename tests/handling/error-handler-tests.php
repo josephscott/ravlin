@@ -33,7 +33,7 @@ function error_tests_handle( App $app, string $method = 'GET' ) : array {
 }
 
 test( 'an uncaught throwable becomes a plain, uncached 500 and is logged', function() {
-	$app = new App();
+	$app = new App( [ 'security_headers' => false ] );
 	$app->get( '/x', fn () => throw new RuntimeException( 'db down' ) );
 	[ $r, $log ] = error_tests_handle( $app );
 	expect( [ $r->status, $r->body, $r->headers ] )

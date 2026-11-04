@@ -6,6 +6,8 @@ namespace Ravlin\Http;
 final class Request {
 	public private(set) array $params = [];
 
+	public private(set) string $csp_nonce = '';
+
 	public function __construct(
 		public private(set) string $method = 'GET',
 		public private(set) string $path = '/',
@@ -14,9 +16,18 @@ final class Request {
 		public private(set) array $cookies = [],
 		public private(set) array $headers = [],
 		public private(set) string $body = '',
+		public private(set) bool $https = false,
 	) {
 		$this->method = strtoupper( $method );
-		$this->headers = array_map( fn ( $v ) => (array) $v, array_change_key_case( $headers, CASE_LOWER ) );
+		$this->headers = [];
+		foreach ( $headers as $name => $value ) {
+			$values = is_array( $value ) && $value !== [] ? array_values( $value ) : [ $value ];
+			$strings = array_map( fn ( $v ) => is_string( $v ) ? $v : '', $values );
+			if ( $strings !== $values ) {
+				trigger_error( 'Request header values must be strings, replaced with an empty string: ' . $name, E_USER_WARNING );
+			}
+			$this->headers[strtolower( (string) $name )] = $strings;
+		}
 	}
 
 	public function get_header( string $name ) : ?string {
@@ -50,6 +61,13 @@ final class Request {
 				trigger_error( 'Route param skipped, names and values must be strings', E_USER_WARNING );
 			}
 		}
+		return $req;
+	}
+
+	/** @internal Used by App to give each request its CSP nonce. */
+	public function with_csp_nonce( string $nonce ) : self {
+		$req = clone $this;
+		$req->csp_nonce = $nonce;
 		return $req;
 	}
 
