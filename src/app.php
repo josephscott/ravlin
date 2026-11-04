@@ -5,10 +5,14 @@ namespace Ravlin;
 
 use Ravlin\Http\Request;
 use Ravlin\Http\Response;
+use Ravlin\Routing\Group;
 use Ravlin\Routing\Route;
 use Ravlin\Routing\Router;
+use Ravlin\Routing\Shortcuts;
 
 final class App {
+	use Shortcuts;
+
 	private Router $router;
 
 	public function __construct(
@@ -22,29 +26,32 @@ final class App {
 		return $route;
 	}
 
-	public function get( string $path, mixed $handler ) : Route {
-		$route = $this->route( [ 'GET' ], $path, $handler );
-		return $route;
+	public function group( string $prefix, callable $fn ) : self {
+		( new Group( $this, '' ) )->group( $prefix, $fn );
+		return $this;
 	}
 
-	public function post( string $path, mixed $handler ) : Route {
-		$route = $this->route( [ 'POST' ], $path, $handler );
-		return $route;
+	public function load_routes( string $file ) : self {
+		$path = $file;
+		if ( ! $this->is_absolute( $file ) ) {
+			$base = $this->config['base_path'] ?? null;
+			$path = is_string( $base ) && $this->is_absolute( $base ) ? rtrim( $base, DIRECTORY_SEPARATOR === '\\' ? '/\\' : '/' ) . '/' . $file : null;
+		}
+		if ( $path === null || ! is_file( $path ) || ! is_readable( $path ) ) {
+			trigger_error( 'Routes file not found or unreadable (relative paths need an absolute base_path): ' . $file, E_USER_WARNING );
+		} else {
+			$load = \Closure::bind( static function( App $app, string $routes_file ) : void {
+				require $routes_file;
+			}, null, null );
+			$load( $this, $path );
+		}
+		return $this;
 	}
 
-	public function put( string $path, mixed $handler ) : Route {
-		$route = $this->route( [ 'PUT' ], $path, $handler );
-		return $route;
-	}
-
-	public function patch( string $path, mixed $handler ) : Route {
-		$route = $this->route( [ 'PATCH' ], $path, $handler );
-		return $route;
-	}
-
-	public function delete( string $path, mixed $handler ) : Route {
-		$route = $this->route( [ 'DELETE' ], $path, $handler );
-		return $route;
+	private function is_absolute( string $path ) : bool {
+		$windows = DIRECTORY_SEPARATOR === '\\' && preg_match( '#^[A-Za-z]:[\\\\/]#', $path ) === 1;
+		$absolute = str_starts_with( $path, '/' ) || str_starts_with( $path, 'phar://' ) || $windows;
+		return $absolute;
 	}
 
 	public function handle( Request $req ) : Response {

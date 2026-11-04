@@ -372,3 +372,84 @@ test( 'a function name wins over a class with the same name', function() {
 	$app->get( '/x', 'app_tests_function' );
 	expect( $app->handle( new Request( 'GET', '/x' ) )->body )->toBe( 'function' );
 } );
+
+test( 'load_routes requires a file relative to base_path with $app in scope, but no $this or App private access', function() {
+	$app = new App( [ 'base_path' => __DIR__ . '/fixtures/' ] );
+	$result = $app->load_routes( 'routes-file.php' );
+	expect( $result )->toBe( $app )->and( $app->handle( new Request( 'GET', '/from-file' ) )->body )->toBe( '{"this":false,"private":false,"vars":["app","routes_file"]}' );
+} );
+
+test( 'load_routes accepts an absolute path without base_path', function() {
+	$app = ( new App() )->load_routes( __DIR__ . '/fixtures/routes-file.php' );
+	expect( $app->handle( new Request( 'GET', '/from-file' ) )->status )->toBe( 200 );
+} );
+
+test( 'load_routes warns instead of failing for a missing file or a relative path without base_path', function( array $config, string $file ) {
+	$app = new App( $config );
+	[ , $warnings ] = capture_warnings( fn () => $app->load_routes( $file ) );
+	expect( is_file( 'tests/fixtures/routes-file.php' ) )->toBeTrue( 'tests must run from the repo root for the CWD cases to mean anything' )
+		->and( $warnings )->toBe( [ 'Routes file not found or unreadable (relative paths need an absolute base_path): ' . $file ] )
+		->and( $app->handle( new Request( 'GET', '/from-file' ) )->status )->toBe( 404 );
+} )->with( [
+	'missing file' => [ [ 'base_path' => __DIR__ ], 'nope.php' ],
+	'no base_path, file exists relative to the CWD' => [ [], 'tests/fixtures/routes-file.php' ],
+	'relative base_path, file exists relative to the CWD' => [ [ 'base_path' => 'tests' ], 'fixtures/routes-file.php' ],
+	'dot base_path' => [ [ 'base_path' => '.' ], 'tests/fixtures/routes-file.php' ],
+	'non-string base_path' => [ [ 'base_path' => true ], 'tests/fixtures/routes-file.php' ],
+	'directory' => [ [ 'base_path' => __DIR__ ], 'fixtures' ],
+	'other stream wrapper' => [ [ 'base_path' => __DIR__ ], 'file://' . __DIR__ . '/fixtures/routes-file.php' ],
+	'drive-letter file off Windows' => [ [ 'base_path' => __DIR__ ], 'C:/routes-file.php' ],
+	'drive-letter base_path off Windows' => [ [ 'base_path' => 'C:/' ], 'tests/fixtures/routes-file.php' ],
+	'trailing backslash kept off Windows' => [ [ 'base_path' => __DIR__ . '/fixtures\\' ], 'routes-file.php' ],
+] );
+
+test( 'a drive-letter path off Windows is relative, so a CWD file named C: is never loaded', function() {
+	if ( DIRECTORY_SEPARATOR === '\\' ) {
+		$this->markTestSkipped( 'drive letters are absolute on Windows' );
+	}
+	$cwd = getcwd();
+	$dir = sys_get_temp_dir() . '/ravlin-cwd-' . getmypid();
+	mkdir( $dir . '/C:', 0o700, true );
+	copy( __DIR__ . '/fixtures/routes-file.php', $dir . '/C:/routes-file.php' );
+	chdir( $dir );
+	$app = new App( [ 'base_path' => __DIR__ ] );
+	[ , $warnings ] = capture_warnings( fn () => $app->load_routes( 'C:/routes-file.php' ) );
+	$base = new App( [ 'base_path' => 'C:/' ] );
+	[ , $base_warnings ] = capture_warnings( fn () => $base->load_routes( 'routes-file.php' ) );
+	chdir( $cwd );
+	unlink( $dir . '/C:/routes-file.php' );
+	rmdir( $dir . '/C:' );
+	rmdir( $dir );
+	expect( [ count( $warnings ), count( $base_warnings ) ] )->toBe( [ 1, 1 ] )
+		->and( $app->handle( new Request( 'GET', '/from-file' ) )->status )->toBe( 404 )
+		->and( $base->handle( new Request( 'GET', '/from-file' ) )->status )->toBe( 404 );
+} );
+
+test( 'load_routes warns instead of failing for an unreadable file', function() {
+	$file = tempnam( sys_get_temp_dir(), 'ravlin' );
+	chmod( $file, 0 );
+	if ( is_readable( $file ) ) {
+		unlink( $file );
+		$this->markTestSkipped( 'running with permissions that read mode 000 files' );
+	}
+	[ , $warnings ] = capture_warnings( fn () => ( new App() )->load_routes( $file ) );
+	unlink( $file );
+	expect( $warnings )->toHaveCount( 1 );
+} );
+
+test( 'load_routes reads routes from inside a phar, by absolute path and by a phar base_path', function() {
+	$phar = sys_get_temp_dir() . '/ravlin-routes-' . getmypid() . '.phar';
+	$build = escapeshellarg( PHP_BINARY ) . ' -d phar.readonly=0 -r ' . escapeshellarg(
+		'$p = new Phar( ' . var_export( $phar, true ) . ' ); $p->addFromString( "routes.php", file_get_contents( ' . var_export( __DIR__ . '/fixtures/routes-file.php', true ) . ' ) );'
+	);
+	if ( ! function_exists( 'exec' ) ) {
+		$this->markTestSkipped( 'exec() is disabled' );
+	}
+	exec( $build, $output, $code );
+	expect( [ $code, is_file( $phar ) ] )->toBe( [ 0, true ] );
+	$absolute = ( new App() )->load_routes( 'phar://' . $phar . '/routes.php' );
+	$relative = ( new App( [ 'base_path' => 'phar://' . $phar ] ) )->load_routes( 'routes.php' );
+	unlink( $phar );
+	expect( $absolute->handle( new Request( 'GET', '/from-file' ) )->status )->toBe( 200 )
+		->and( $relative->handle( new Request( 'GET', '/from-file' ) )->status )->toBe( 200 );
+} );

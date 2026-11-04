@@ -25,7 +25,9 @@
 
 ## App and routing
 - `new App( array $config )` — `base_path`, `keys`, `debug`; plain PHP config
-- `load_routes( string $file ) : self` — `require`s the file (resolved from `base_path`) with `$app` in scope; call again to split
+- `load_routes( string $file ) : self` — relative paths need an absolute `base_path` (`/…`, `phar://…`; `C:\…` only on Windows, UNC paths unsupported), never the CWD; absolute paths as-is; missing/unreadable → warning
+- The file is `require`d unbound: only `$app` (and `$routes_file`) in scope, no `$this`, no App private access; it must not declare functions/classes (two Apps in one process → fatal); loading twice registers routes twice
+- Errors thrown while loading routes happen at boot, outside `handle()`'s outermost catch — they stop the process
 - `get|post|put|patch|delete( string $path, $handler ) : Route`; `route( array $methods, $path, $handler ) : Route`
 - Handler: `fn ( Request $req ) : Response|string|array` — string → `Response::html()`, array → `Response::json()`
 - Handler forms (`callable|array|string`): closure, `[ Class::class, 'method' ]`, `Class::class`, `[ $object, 'method' ]`
@@ -47,7 +49,9 @@
 - A decoded path with control bytes (`\x00`–`\x1F`, `\x7F`, U+0080–U+009F) or invalid UTF-8 matches nothing → 404
 - Route paths are written decoded (`/café`, not `/caf%C3%A9`); a `%`, control byte, bad `{...}` or no valid methods → skipped with a warning
 - `$req->path` stays raw (`/%61dmin` matches the `/admin` route) — authorize by route or group, never by string checks on `$req->path`
-- `group( string $prefix, callable $fn )` — `$fn( Group $g )` registers `$g->get( ... )` etc. under the prefix
+- `group( string $prefix, callable $fn ) : self` — `$fn( Group $g )` registers `$g->get( ... )` etc. under the prefix; groups nest, prefixes may hold params
+- Prefix: `/a` or `/a/{id}` — no trailing `/`, empty segments, `%`, control bytes or invalid UTF-8, else skipped with a warning
+- Group paths must be `''` (the prefix itself) or start with `/`; anything else is not joined and is rejected, so a route can't escape its group
 - Params reach the handler via `Request::with_params( array $params ) : Request` — `@internal`, returns a copy
 - `handle( Request $req ) : Response` — no output, no globals; runtimes call it and send the result
 - HEAD falls back to the GET route (the handler sees `$req->method === 'HEAD'`); App always empties HEAD bodies
@@ -61,7 +65,8 @@
 4. Security headers — CSP with per-request nonce, nosniff, frame-ancestors, Referrer-Policy, COOP, CORP, HSTS on HTTPS
 - Security headers are added to every response, including the 500 from step 1 and the 403 from step 2
 - Config switches: `csrf`, `security_headers` (`true`/`false` or an array of overrides)
-- Per route: `->set_option( 'csrf', false )` (e.g. webhooks), `->set_option( 'csp', '...' )`
+- Per route: `->set_option( 'csrf', false )` (e.g. webhooks), `->set_option( 'csp', '...' )`; `get_option( $name )` → null when unset
+- Only known options with the right type (`csrf` bool, `csp` non-empty printable ASCII) are kept; anything else → warning
 
 ## Runtimes — each takes the App; the App never knows which runtime runs it
 - `Sapi::run( App $app ) : void` — php -S, php-fpm, FrankenPHP classic; Request from superglobals + `php://input`, sent with `header()`/`echo`

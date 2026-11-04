@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Ravlin\Routing;
 
 final class Route {
+	private const OPTIONS = [ 'csrf' => 'bool', 'csp' => 'string' ];
+
 	public private(set) array $options = [];
 
 	public function __construct(
@@ -11,6 +13,21 @@ final class Route {
 		public private(set) string $path,
 		public private(set) mixed $handler,
 	) {}
+
+	public function set_option( string $name, mixed $value ) : self {
+		$valid = ( self::OPTIONS[$name] ?? null ) === get_debug_type( $value ) && ( ! is_string( $value ) || preg_match( '/^[\x20-\x7E]+$/D', $value ) === 1 );
+		if ( $valid ) {
+			$this->options[$name] = $value;
+		} else {
+			trigger_error( 'Invalid route option skipped: ' . $name, E_USER_WARNING );
+		}
+		return $this;
+	}
+
+	public function get_option( string $name ) : mixed {
+		$value = $this->options[$name] ?? null;
+		return $value;
+	}
 
 	public function served_methods() : array {
 		$methods = $this->methods;
