@@ -33,12 +33,18 @@ final class Sapi {
 			}
 		}
 		foreach ( [ 'CONTENT_TYPE' => 'Content-Type', 'CONTENT_LENGTH' => 'Content-Length' ] as $key => $name ) {
-			if ( isset( $_SERVER[$key] ) ) {
+			if ( isset( $_SERVER[$key] ) && $_SERVER[$key] !== '' ) {
 				$headers[$name] = $_SERVER[$key];
 			}
 		}
 		$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 		$path = explode( '?', $_SERVER['REQUEST_URI'] ?? '/', 2 )[0];
+		if ( preg_match( '#^https?://(?:[^/@]*@)?([^/]*)#i', $path, $m ) === 1 ) {
+			$path = substr( $path, strlen( $m[0] ) ) ?: '/';
+			if ( $m[1] !== '' ) {
+				$headers['HOST'] = $m[1];
+			}
+		}
 		$body = (string) file_get_contents( 'php://input' );
 		$https = strtolower( (string) ( $_SERVER['HTTPS'] ?? '' ) );
 		$req = new Request( $method, $path, $_GET, $_POST, $_COOKIE, $headers, $body, $https !== '' && $https !== 'off' );

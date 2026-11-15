@@ -72,3 +72,32 @@ test( 'request marks HTTPS the way web servers report it', function( ?string $va
 	'on' => [ 'on', true ],
 	'1' => [ '1', true ],
 ] );
+
+test( 'request takes the path and Host from an absolute-form request target, as RFC 9112 requires', function( string $uri, string $path, string $host ) {
+	$server = $_SERVER;
+	$_SERVER['REQUEST_URI'] = $uri;
+	$_SERVER['HTTP_HOST'] = 'sent.test';
+	$req = Sapi::request();
+	$_SERVER = $server;
+	expect( [ $req->path, $req->get_header( 'host' ) ] )->toBe( [ $path, $host ] );
+} )->with( [
+	'origin form' => [ '/a/b?x=1', '/a/b', 'sent.test' ],
+	'absolute form' => [ 'http://example.test/a/b?x=1', '/a/b', 'example.test' ],
+	'absolute form, https, port, any case' => [ 'HTTPS://Example.test:8443/a', '/a', 'Example.test:8443' ],
+	'absolute form without a path' => [ 'http://example.test', '/', 'example.test' ],
+	'absolute form with only a query' => [ 'http://example.test?x=1', '/', 'example.test' ],
+	'userinfo is not part of Host' => [ 'http://user:pw@example.test/a', '/a', 'example.test' ],
+	'empty authority keeps Host' => [ 'http:///a', '/a', 'sent.test' ],
+	'scheme-like path stays' => [ '/http://example.test/a', '/http://example.test/a', 'sent.test' ],
+	'other scheme stays' => [ 'ftp://example.test/a', 'ftp://example.test/a', 'sent.test' ],
+	'double slash stays' => [ '//example.test/a', '//example.test/a', 'sent.test' ],
+] );
+
+test( 'request skips empty content headers, which CGI servers send when the client sent none', function( string $value, ?string $expected ) {
+	$server = $_SERVER;
+	$_SERVER['CONTENT_TYPE'] = $value;
+	$_SERVER['CONTENT_LENGTH'] = $value;
+	$req = Sapi::request();
+	$_SERVER = $server;
+	expect( [ $req->get_header( 'content-type' ), $req->get_header( 'content-length' ) ] )->toBe( [ $expected, $expected ] );
+} )->with( [ 'empty' => [ '', null ], 'set' => [ '7', '7' ] ] );

@@ -25,5 +25,14 @@ $app->get( '/warn', function() {
 	return 'ok';
 } );
 $app->post( '/post', fn () => 'posted' );
+$app->route( [ 'GET', 'POST' ], '/echo', fn ( Ravlin\Http\Request $req ) => [
+	'q' => $req->get_query( 'q' ),
+	'f' => $req->get_form( 'f' ),
+	'body' => $req->body,
+	'content-type' => $req->get_header( 'content-type' ),
+	'content-length' => $req->get_header( 'content-length' ),
+	'host' => $req->get_header( 'host' ),
+] );
+$app->get( '/p/{v}', fn ( Ravlin\Http\Request $req ) => (string) $req->get_param( 'v' ) );
 $app->get( '/throw', fn () => throw new RuntimeException( 'SECRET' ) );
 Ravlin\Runtime\Sapi::run( $app );

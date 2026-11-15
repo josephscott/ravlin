@@ -109,6 +109,13 @@
 
 ## Runtimes — each takes the App; the App never knows which runtime runs it
 - `Sapi::run( App $app ) : void` — php -S, php-fpm, FrankenPHP classic; Request from superglobals + `php://input`, sent with `header()`/`echo`
+- `Sapi::request()` takes the path from `REQUEST_URI` without the query; an absolute-form target (`GET http://host/path`, RFC 9112 §3.2.2 — `php -S` and Apache pass it through, nginx rewrites it) is reduced to its path, and its authority (without userinfo) replaces `Host`, as the RFC requires and nginx does; only `http`/`https` targets
+- Empty `CONTENT_TYPE` / `CONTENT_LENGTH` are skipped (CGI servers send them when the client sent none, and an explicitly empty header means the same), so `get_header( 'content-type' )` is `null` on every runtime
+- php-fpm: `make serve-fpm` runs the example app behind nginx (`examples/app/fpm/nginx.conf` + `php-fpm.conf`, ports 8001/9001, overridable with `FPM_HTTP_PORT` / `FPM_PORT` / `PHP_FPM` / `NGINX`, files under `.serve-fpm/`; the repo path must not contain spaces, `;` or `$` (break the nginx config) nor `#`, `&` or `\` (break the Makefile's `sed`)); stopping it (Ctrl-C, closing the terminal) or either process exiting stops both, and a process that exits on its own (e.g. port in use) makes it fail
+- The server tests run every end-to-end check under both `php -S` and nginx + php-fpm (skipped if `php-fpm`/`nginx` aren't found — Homebrew, `/usr/sbin/php-fpm8.x`, or `PATH`; `RAVLIN_PHP_FPM` / `RAVLIN_NGINX` override; `-R` is passed when run as root)
+- The example configs are for development and tests only: FastCGI on TCP (any local user can talk to it), no `server_name`/default server (DNS rebinding; `SERVER_NAME` is the client's `Host`), small `pm`, no `request_terminate_timeout`
+- Under nginx: request bodies over 1 MB get nginx's 413 (`php -S` takes up to `post_max_size`); nginx's own 400/413/501/502 pages carry none of ravlin's headers; repeated request headers arrive joined into one value; ravlin's log lines go to PHP's `error_log` if set, else into nginx's error log (cut at ~2 KB)
+- The nginx config sends every request to ravlin's front controller (no static files; serving `public/` directly would expose `index.php`'s source), passes `HTTPS` only on TLS, and keeps nginx's default of dropping header names with underscores (closes the `Sec_Fetch_Site` collision)
 - `FrankenPhpWorker::run( App $app ) : void` — loops `frankenphp_handle_request()`; a fresh Request per iteration, nothing kept between
 - `Workerman::run( App $app, string $listen = 'http://0.0.0.0:8080', int $workers = 4 ) : void`
 - Static files: out of scope for now — ravlin doesn't serve them (FrankenPHP's Caddy still does on its own)

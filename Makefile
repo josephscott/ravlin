@@ -52,3 +52,21 @@ tests: ## Run tests
 .PHONY: serve
 serve: ## Run the example app with php -S on 127.0.0.1:8000
 	php -S 127.0.0.1:8000 examples/app/public/index.php
+
+PHP_FPM ?= $(firstword $(wildcard $(shell php -r 'echo dirname( PHP_BINARY, 2 ) . "/sbin/php-fpm /usr/sbin/php-fpm" . PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;')) php-fpm)
+NGINX ?= nginx
+FPM_RUN := $(HERE).serve-fpm
+FPM_HTTP_PORT ?= 8001
+FPM_PORT ?= 9001
+FILL_FPM = sed -e 's\#{port}\#$(FPM_HTTP_PORT)\#g' -e 's\#{fpm_port}\#$(FPM_PORT)\#g' -e 's\#{run}\#$(FPM_RUN)\#g' -e 's\#{root}\#$(HERE)examples/app/public\#g' -e 's\#{script}\#$(HERE)examples/app/public/index.php\#g'
+
+.PHONY: serve-fpm
+serve-fpm: ## Run the example app with nginx + php-fpm on 127.0.0.1:8001 (php-fpm on 127.0.0.1:9001)
+	@mkdir -p $(FPM_RUN)
+	@$(FILL_FPM) examples/app/fpm/php-fpm.conf > $(FPM_RUN)/php-fpm.conf
+	@$(FILL_FPM) examples/app/fpm/nginx.conf > $(FPM_RUN)/nginx.conf
+	@echo "--> http://127.0.0.1:$(FPM_HTTP_PORT) (Ctrl-C to stop)"
+	@$(PHP_FPM) -F -y $(FPM_RUN)/php-fpm.conf & fpm=$$!; \
+	$(NGINX) -p $(FPM_RUN) -e $(FPM_RUN)/nginx-error.log -c $(FPM_RUN)/nginx.conf & ngx=$$!; \
+	trap 'kill $$fpm $$ngx 2>/dev/null' EXIT; trap 'exit 1' HUP INT TERM; \
+	while kill -0 $$fpm 2>/dev/null && kill -0 $$ngx 2>/dev/null; do sleep 1; done; exit 1

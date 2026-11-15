@@ -5,6 +5,9 @@ phpunit.xml
 # PHPStan
 phpstan.neon
 
+# make serve-fpm configs and logs
+.serve-fpm/
+
 # Vendor Files
 vendor/*
 composer.lock
